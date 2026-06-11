@@ -895,9 +895,67 @@ impl PreloadInjection {
     /// The single token form for NODE_OPTIONS (`--require=<v>` / `--import=<v>`),
     /// which doubles as the re-entrancy key: a child detects a parent-injected
     /// preload by finding this exact token in its inherited NODE_OPTIONS.
+    ///
+    /// The VALUE half is quoted with [`node_options_quote`] so a preload path
+    /// containing a space (e.g. a cache or temp dir under `C:\Users\John Doe\…`,
+    /// or a macOS `~/Library/Application Support/…`) survives Node's NODE_OPTIONS
+    /// tokenizer, which splits on unquoted spaces. The re-entrancy detector
+    /// ([`is_reentrant_in`]) compares against this same quoted form, so the key
+    /// still round-trips.
     pub fn node_options_token(&self) -> String {
-        format!("{}={}", self.flag, self.value)
+        format!("{}={}", self.flag, node_options_quote(&self.value))
     }
+}
+
+/// Quote a value for safe embedding in NODE_OPTIONS. Node's NODE_OPTIONS
+/// tokenizer (`ParseNodeOptionsEnvVar`, .repos/node/src/node_options.cc:2214)
+/// splits on spaces UNLESS the run is inside a double-quoted string, and treats
+/// backslash as an escape ONLY inside such a string. So a value with a space
+/// must be wrapped in `"…"`, and inside those quotes every `\` and `"` must be
+/// backslash-escaped or the path corrupts (the load-bearing Windows case:
+/// `C:\Users\John Doe\.cache` → without escaping, `\U`, `\J`, `\.` get eaten).
+/// Single quotes do NOT work — Node has no single-quote handling, so they'd
+/// become literal characters in the path (`ERR_INVALID_STATE` on the store).
+///
+/// Values WITHOUT a space are returned unchanged: they tokenize fine bare, and
+/// not quoting them keeps NODE_OPTIONS readable and matches plain-Node argv.
+/// Use this for EVERY value-bearing flag nub writes into NODE_OPTIONS
+/// (`--localstorage-file=`, `--test-coverage-exclude=`, the preload
+/// `--require=`/`--import=` token, PnP `--require=`).
+fn node_options_quote(value: &str) -> String {
+    if value.contains(' ') {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    } else {
+        value.to_string()
+    }
+}
+
+/// Whether the user has already taken control of webstorage — via argv OR the
+/// inherited NODE_OPTIONS env — and nub must therefore NOT inject its own
+/// `--localstorage-file` / `--experimental-webstorage`. Scans BOTH surfaces for
+/// `--localstorage-file`, `--experimental-webstorage`, and
+/// `--no-experimental-webstorage` (any spelling, `=`-joined or two-token).
+///
+/// Why NODE_OPTIONS matters: a user who exports
+/// `NODE_OPTIONS=--localstorage-file=/my/store.sqlite` and runs `nub script.js`
+/// expects THEIR file to back localStorage. nub's argv-injected
+/// `--localstorage-file` would win (last-wins, argv beats env), silently
+/// redirecting persistence to nub's workspace store — the owner explicitly
+/// demanded no clobbering. Suppressing when the env carries any webstorage flag
+/// hands control back to the user.
+fn user_controls_webstorage(user_args: &[String], node_options: Option<&str>) -> bool {
+    let is_ws_flag = |tok: &str| {
+        tok.starts_with("--localstorage-file")
+            || tok == "--experimental-webstorage"
+            || tok == "--no-experimental-webstorage"
+    };
+    if user_args.iter().any(|a| is_ws_flag(a)) {
+        return true;
+    }
+    node_options
+        .map(|opts| opts.split_whitespace().any(is_ws_flag))
+        .unwrap_or(false)
 }
 
 /// Pick the preload injection for a Node version, given the located ESM preload
@@ -1330,7 +1388,11 @@ mod tests {
         // DIFFERENT roots. This is the whole point of workspace-scoping — a monorepo's
         // packages see each other's storage, separate repos stay isolated.
         let ws = TempDir::new("mono");
-        fs::write(ws.path().join("pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n").unwrap();
+        fs::write(
+            ws.path().join("pnpm-workspace.yaml"),
+            "packages:\n  - 'packages/*'\n",
+        )
+        .unwrap();
         fs::write(ws.path().join("package.json"), r#"{"name":"root"}"#).unwrap();
         let pkg_a = ws.path().join("packages/a");
         let pkg_b = ws.path().join("packages/b");
@@ -1392,10 +1454,17 @@ mod tests {
             "file must live under .../webstorage/<hash>/: {}",
             a1.display()
         );
-        assert_eq!(webstorage_root.parent().unwrap().file_name().unwrap(), "nub");
+        assert_eq!(
+            webstorage_root.parent().unwrap().file_name().unwrap(),
+            "nub"
+        );
         // The 16-hex-char hash dir name (first 16 of SHA-256).
         let hash = a1.parent().unwrap().file_name().unwrap().to_str().unwrap();
-        assert_eq!(hash.len(), 16, "hash dir is first-16-hex of SHA-256: {hash}");
+        assert_eq!(
+            hash.len(),
+            16,
+            "hash dir is first-16-hex of SHA-256: {hash}"
+        );
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 

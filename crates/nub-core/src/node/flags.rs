@@ -102,7 +102,10 @@ const UNFLAG_TABLE: &[UnflagEntry] = &[
         // — injecting it on any 21.x is a "bad option" startup crash. Never unflagged
         // through 26. Injection set: [20.18.0, 21.0.0) ∪ [22.3.0, ∞).
         bands: &[
-            (NodeVersion::new(20, 18, 0), Some(NodeVersion::new(21, 0, 0))),
+            (
+                NodeVersion::new(20, 18, 0),
+                Some(NodeVersion::new(21, 0, 0)),
+            ),
             (NodeVersion::new(22, 3, 0), None),
         ],
     },
@@ -121,7 +124,10 @@ const UNFLAG_TABLE: &[UnflagEntry] = &[
         // doesn't EXIST below 22.5.0, so injecting there crashes. Inject only where
         // the flag both exists and is still required: [22.5.0, 22.13.0) ∪ [23.0.0, 23.4.0).
         bands: &[
-            (NodeVersion::new(22, 5, 0), Some(NodeVersion::new(22, 13, 0))),
+            (
+                NodeVersion::new(22, 5, 0),
+                Some(NodeVersion::new(22, 13, 0)),
+            ),
             (NodeVersion::new(23, 0, 0), Some(NodeVersion::new(23, 4, 0))),
         ],
     },
@@ -134,7 +140,10 @@ const UNFLAG_TABLE: &[UnflagEntry] = &[
         // The experimental warning emitted on 22.0–22.3 is already silenced by nub's
         // `--disable-warning=ExperimentalWarning` (injected ≥20.11). Injection set:
         // [20.10.0, 22.0.0).
-        bands: &[(NodeVersion::new(20, 10, 0), Some(NodeVersion::new(22, 0, 0)))],
+        bands: &[(
+            NodeVersion::new(20, 10, 0),
+            Some(NodeVersion::new(22, 0, 0)),
+        )],
     },
 ];
 
@@ -151,7 +160,7 @@ impl UnflagEntry {
     /// version lands in any `[lo, hi)` band.
     fn applies_to(&self, node_version: &NodeVersion) -> bool {
         self.bands.iter().any(|(lo, hi)| {
-            *node_version >= *lo && hi.as_ref().map_or(true, |hi| node_version < hi)
+            *node_version >= *lo && hi.as_ref().is_none_or(|hi| node_version < hi)
         })
     }
 }
@@ -259,10 +268,14 @@ mod tests {
     fn vm_modules_injected_across_entire_floor() {
         // vm.Module is never unflagged — inject from the 18.19 floor through 26.x.
         // (Regression: the old min:22.15.0 left vm.Module broken on 18.19–22.14.)
-        assert!(compute_inject_flags(v(18, 19, 0), &[], None, false)
-            .contains(&"--experimental-vm-modules"));
-        assert!(compute_inject_flags(v(26, 2, 0), &[], None, false)
-            .contains(&"--experimental-vm-modules"));
+        assert!(
+            compute_inject_flags(v(18, 19, 0), &[], None, false)
+                .contains(&"--experimental-vm-modules")
+        );
+        assert!(
+            compute_inject_flags(v(26, 2, 0), &[], None, false)
+                .contains(&"--experimental-vm-modules")
+        );
     }
 
     #[test]

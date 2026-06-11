@@ -922,11 +922,20 @@ fn webstorage_persists_across_runs_and_is_off_under_node_flag() {
 
     // Run 1: write a value. Run 2 (separate process): read it back.
     let (set_out, set_err, set_code) = run(&["set.js"]);
-    assert_eq!(set_code, 0, "set run failed: stderr={set_err}\nstdout={set_out}");
-    assert!(set_out.contains("SET_OK"), "set run stdout: {set_out:?} stderr: {set_err:?}");
+    assert_eq!(
+        set_code, 0,
+        "set run failed: stderr={set_err}\nstdout={set_out}"
+    );
+    assert!(
+        set_out.contains("SET_OK"),
+        "set run stdout: {set_out:?} stderr: {set_err:?}"
+    );
 
     let (get_out, get_err, get_code) = run(&["get.js"]);
-    assert_eq!(get_code, 0, "get run failed: stderr={get_err}\nstdout={get_out}");
+    assert_eq!(
+        get_code, 0,
+        "get run failed: stderr={get_err}\nstdout={get_out}"
+    );
     assert!(
         get_out.contains("GOT:abc123"),
         "value must persist across invocations; got stdout: {get_out:?} stderr: {get_err:?}"
@@ -938,7 +947,11 @@ fn webstorage_persists_across_runs_and_is_off_under_node_flag() {
         .unwrap_or_else(|e| panic!("webstorage dir {ws_root:?} not created: {e}"))
         .filter_map(|e| e.ok())
         .collect();
-    assert_eq!(hash_dirs.len(), 1, "exactly one workspace hash dir expected");
+    assert_eq!(
+        hash_dirs.len(),
+        1,
+        "exactly one workspace hash dir expected"
+    );
     let sqlite = hash_dirs[0].path().join("localstorage.sqlite");
     assert!(sqlite.is_file(), "SQLite store must exist at {sqlite:?}");
     // It's a real SQLite database, not an empty placeholder.
