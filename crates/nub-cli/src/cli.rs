@@ -6,6 +6,15 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Stable, branded error codes for nub-cli's own (non-engine) failure paths.
+/// The engine's `ERR_AUBE_*` codes are rewritten to `ERR_NUB_*` at presentation
+/// (see `pm_engine::present`); these are nub's native equivalents, embedded
+/// directly in the user-facing message text since these paths surface as
+/// `anyhow` errors rather than miette reports. Keep the `ERR_NUB_*` spelling so
+/// the brand boundary holds and the codes read identically to the engine's.
+const ERR_NUB_MANIFEST_UNREADABLE: &str = "ERR_NUB_MANIFEST_UNREADABLE";
+const ERR_NUB_MANIFEST_PARSE: &str = "ERR_NUB_MANIFEST_PARSE";
+
 static SHOW_WARNINGS: AtomicBool = AtomicBool::new(false);
 /// `--silent` suppresses Nub's own preamble (the `$ <command>` script echo),
 /// never the script's stdout. Set once at startup; read at each script-run echo.
@@ -916,23 +925,7 @@ fn run_nub() -> Result<i32> {
     }
 
     if version {
-        // Copy node's own format: a bare `v<semver>` on stdout, so `$(nub --version)`
-        // drops into anything that already parses `node --version`. The resolved
-        // Node rides on STDERR — informative for a human, invisible to `$(...)` —
-        // and is best-effort: discovery failure never fails `--version` (no pin
-        // resolution context is required to report nub's own version).
-        // Supersedes the 2026-06-04 "pure --version, no node info" record
-        // (accf251); ruled by the maintainer 2026-06-11.
-        println!("v{}", env!("CARGO_PKG_VERSION"));
-        if let Ok(cur) = env::current_dir() {
-            if let Ok(node) = nub_core::node::discovery::discover_node(&cur) {
-                let provenance = match &node.pin_source {
-                    Some(src) => format!("resolved from {src}"),
-                    None => "from PATH".to_string(),
-                };
-                eprintln!("» node v{} ({provenance})", node.version);
-            }
-        }
+        print_version();
         return Ok(0);
     }
 
@@ -1413,6 +1406,29 @@ fn run_nubx() -> Result<i32> {
     // (`nubx eslint --node`, `nubx eslint --help`) reaches the bin verbatim.
     let args: Vec<String> = env::args().skip(1).collect();
 
+    // `--help`/`--version` are nubx's own flags only when they appear BEFORE the
+    // bin positional (the three-position rule: a flag after the bin reaches the
+    // bin verbatim — `nubx eslint --help` is eslint's help). When no bin name has
+    // been seen yet and one of these leading flags appears, honor it like
+    // `nub --help`/`nub --version` instead of bailing on "missing binary name"
+    // (the bail fired before this check, so `nubx --help`/`--version` errored).
+    for arg in &args {
+        if arg == "--" || !arg.starts_with('-') {
+            break; // bin positional (or its `--` separator) — stop scanning
+        }
+        match arg.as_str() {
+            "--help" | "-h" => {
+                run_help(Some("exec"));
+                return Ok(0);
+            }
+            "--version" | "-v" | "-V" => {
+                print_version();
+                return Ok(0);
+            }
+            _ => {}
+        }
+    }
+
     if args.is_empty() || args.iter().all(|a| a.starts_with('-') && a != "--") {
         // No bin name at all (empty, or only leading flags like `nubx --node`).
         bail!("nubx: missing binary name\nUsage: nubx [--node] <bin> [args...]");
@@ -1450,6 +1466,11 @@ fn run_file_with_compat(args: &[String], compat_mode: bool) -> Result<i32> {
 /// child's cwd is set on `SpawnConfig` so the override reaches Node itself, not
 /// just nub's discovery (spawn_node otherwise inherits the parent's cwd).
 fn run_file_in_dir(args: &[String], compat_mode: bool, cwd: &Path) -> Result<i32> {
+    // Preflight the project manifest first: an EACCES/unparseable package.json
+    // otherwise reads as "no project" through every Option-returning reader on
+    // this path (pin resolution, .env, PnP), so the run silently drops the
+    // project context with no diagnostic. Surface the coded cause up front.
+    check_manifest_json(cwd)?;
     // Fire point: `nub <file>` (and the hijack-descendant `node`, which routes
     // through run_as_node → run_file). A pinned-but-uncached version is downloaded
     // + installed from nodejs.org here, uv-style. (`nub run`/`nub exec` keep plain
@@ -1513,6 +1534,10 @@ fn run_script(
     args: &[String],
 ) -> Result<i32> {
     let cwd = env::current_dir()?;
+    // Preflight: a package.json that exists but is unreadable (EACCES) or
+    // unparseable would otherwise be swallowed by detect_project into the
+    // misleading "no package.json found" below. Surface the real, coded cause.
+    check_manifest_json(&cwd)?;
     let project = nub_core::workspace::detect::detect_project(&cwd)
         .ok_or_else(|| anyhow::anyhow!("no package.json found"))?;
 
@@ -1604,6 +1629,9 @@ fn run_workspace_target(
     ws: &WorkspaceOpts,
 ) -> Result<i32> {
     let cwd = env::current_dir()?;
+    // See run_script: surface an unreadable/unparseable manifest with its coded
+    // cause instead of the misleading "no package.json found".
+    check_manifest_json(&cwd)?;
     let project = nub_core::workspace::detect::detect_project(&cwd)
         .ok_or_else(|| anyhow::anyhow!("no package.json found"))?;
     let project = &project;
@@ -3484,6 +3512,26 @@ fn sha256_hex(bytes: &[u8]) -> String {
     s
 }
 
+/// Print nub's version exactly like `nub --version` (and now `nubx --version`).
+/// Copy node's own format: a bare `v<semver>` on stdout, so `$(nub --version)`
+/// drops into anything that already parses `node --version`. The resolved Node
+/// rides on STDERR — informative for a human, invisible to `$(...)` — and is
+/// best-effort: discovery failure never fails `--version` (no pin resolution
+/// context is required to report nub's own version). Supersedes the 2026-06-04
+/// "pure --version, no node info" record (accf251); ruled by the maintainer 2026-06-11.
+fn print_version() {
+    println!("v{}", env!("CARGO_PKG_VERSION"));
+    if let Ok(cur) = env::current_dir() {
+        if let Ok(node) = nub_core::node::discovery::discover_node(&cur) {
+            let provenance = match &node.pin_source {
+                Some(src) => format!("resolved from {src}"),
+                None => "from PATH".to_string(),
+            };
+            eprintln!("» node v{} ({provenance})", node.version);
+        }
+    }
+}
+
 fn run_help(command: Option<&str>) {
     // Re-parse with `--help` to obtain clap's help. `try_parse_from` returns it
     // as `Err(DisplayHelp)` carrying the formatted text; print it (clap routes
@@ -3663,10 +3711,30 @@ fn check_manifest_json(cwd: &Path) -> Result<()> {
     while let Some(d) = dir {
         let pkg = d.join("package.json");
         if pkg.is_file() {
-            let content = std::fs::read_to_string(&pkg)
-                .with_context(|| format!("reading {}", pkg.display()))?;
+            let content = match std::fs::read_to_string(&pkg) {
+                Ok(content) => content,
+                // A package.json that EXISTS but can't be read (most commonly
+                // EACCES — wrong owner/mode in CI or a root-owned tree) otherwise
+                // gets swallowed into "no package.json found" by every Option-
+                // returning reader downstream (`detect_project`), misdiagnosing a
+                // permission problem as an unconfigured project. Surface it with
+                // nub's stable code and the actionable OS reason instead.
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    bail!(
+                        "{ERR_NUB_MANIFEST_UNREADABLE}: cannot read {} ({e})\n\
+                         \x20\x20Check the file's permissions/ownership so nub can read it.",
+                        pkg.display()
+                    );
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| format!("reading {}", pkg.display()));
+                }
+            };
             if let Err(e) = serde_json::from_str::<serde_json::Value>(&content) {
-                bail!("package.json is not valid JSON ({}): {e}", pkg.display());
+                bail!(
+                    "{ERR_NUB_MANIFEST_PARSE}: package.json is not valid JSON ({}): {e}",
+                    pkg.display()
+                );
             }
             return Ok(());
         }
@@ -5911,13 +5979,17 @@ mod tests {
 
     #[test]
     fn check_manifest_json_flags_malformed_but_passes_valid_and_missing() {
-        // Malformed → a JSON-parse error naming the file (not "unpinned").
+        // Malformed → a coded JSON-parse error naming the file (not "unpinned").
         let bad = pm_tmpdir("manifest-bad");
         std::fs::write(bad.join("package.json"), "{ \"name\": ").unwrap();
         let err = check_manifest_json(&bad).unwrap_err().to_string();
         assert!(
             err.contains("package.json is not valid JSON") && err.contains("package.json"),
             "malformed must name the parse failure + path, got: {err}"
+        );
+        assert!(
+            err.contains(ERR_NUB_MANIFEST_PARSE),
+            "malformed must carry the branded parse code, got: {err}"
         );
 
         // Valid manifest and a dir with no manifest at all are both Ok — a missing
@@ -5926,6 +5998,30 @@ mod tests {
         std::fs::write(good.join("package.json"), r#"{"name":"app"}"#).unwrap();
         assert!(check_manifest_json(&good).is_ok());
         assert!(check_manifest_json(&pm_tmpdir("manifest-none")).is_ok());
+
+        // A package.json that EXISTS but can't be read (EACCES) must surface a
+        // coded permission error — NOT get swallowed into "no package.json found"
+        // by the Option-returning readers downstream. Unix-only: Windows ACLs
+        // don't map onto a chmod, and PermissionDenied isn't reachable via mode.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let denied = pm_tmpdir("manifest-eacces");
+            let pkg = denied.join("package.json");
+            std::fs::write(&pkg, r#"{"name":"app"}"#).unwrap();
+            std::fs::set_permissions(&pkg, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let err = check_manifest_json(&denied).unwrap_err().to_string();
+            // Restore before asserting so the tempdir cleanup can remove it.
+            std::fs::set_permissions(&pkg, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(
+                err.contains(ERR_NUB_MANIFEST_UNREADABLE),
+                "EACCES must carry the branded unreadable code, got: {err}"
+            );
+            assert!(
+                err.contains("permissions") || err.contains("ownership"),
+                "EACCES must offer an actionable remedy, got: {err}"
+            );
+        }
     }
 
     #[test]

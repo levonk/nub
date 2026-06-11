@@ -2621,6 +2621,132 @@ fn nubx_basic() {
     );
 }
 
+/// BUG#2: a package.json that exists but can't be READ (EACCES) must surface a
+/// coded permission error, not the misleading "no package.json found" that every
+/// Option-returning manifest reader collapses an unreadable file into. Unix-only:
+/// Windows ACLs don't map onto a chmod, and the OS error kind differs.
+#[cfg(unix)]
+#[test]
+fn unreadable_package_json_surfaces_coded_permission_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = std::env::temp_dir().join(format!("nub-eacces-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pkg = dir.join("package.json");
+    std::fs::write(&pkg, r#"{"scripts":{"build":"echo hi"}}"#).unwrap();
+    std::fs::set_permissions(&pkg, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let output = Command::new(nub_binary())
+        .args(["run", "build"])
+        .current_dir(&dir)
+        .output()
+        .expect("spawn nub run");
+    // Restore perms so cleanup can remove the tree regardless of assertions.
+    std::fs::set_permissions(&pkg, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ERR_NUB_MANIFEST_UNREADABLE"),
+        "an EACCES manifest read must carry the branded code, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("no package.json found"),
+        "must not misdiagnose an unreadable manifest as missing: {stderr}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// BUG#3: a Node-provisioning failure (here, a pin to a version nodejs.org will
+/// 404 on) must carry nub's branded code, not print a bare `Error:` (anyhow
+/// Display). Network-touching; pinned via `.node-version` so the file runner's
+/// auto-provision path fires.
+#[test]
+fn provision_failure_carries_branded_code() {
+    let dir = std::env::temp_dir().join(format!("nub-provfail-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".node-version"), "99.0.0\n").unwrap();
+    std::fs::write(dir.join("app.js"), "console.log('x')\n").unwrap();
+
+    let output = Command::new(nub_binary())
+        .arg(dir.join("app.js"))
+        .current_dir(&dir)
+        .env("XDG_CACHE_HOME", &dir) // hermetic store; force the download attempt
+        .output()
+        .expect("spawn nub <file>");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a bogus pin must fail: {stderr}"
+    );
+    assert!(
+        stderr.contains("ERR_NUB_NODE_PROVISION_FAILED"),
+        "a provisioning failure must carry the branded code, got: {stderr}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `nubx --help` / `nubx --version` must show help / the version — NOT error
+/// with "missing binary name". The exec/nubx split bailed on the absent bin
+/// positional before ever checking for the meta-flags, so the two invocations
+/// every CLI is expected to answer (matching `nub --help` / `nub --version`)
+/// failed. argv0 dispatch decides nubx-mode by the binary's file_stem, so the
+/// only faithful test copies the binary to a `nubx`-named path and runs that.
+#[test]
+fn nubx_help_and_version_do_not_error_on_missing_bin() {
+    let dir = std::env::temp_dir().join(format!("nub-nubx-meta-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let nubx = dir.join(if cfg!(windows) { "nubx.exe" } else { "nubx" });
+    std::fs::copy(nub_binary(), &nubx).expect("copy nub → nubx");
+
+    let help = Command::new(&nubx)
+        .arg("--help")
+        .output()
+        .expect("spawn nubx --help");
+    let help_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&help.stdout),
+        String::from_utf8_lossy(&help.stderr)
+    );
+    assert_eq!(
+        help.status.code(),
+        Some(0),
+        "nubx --help must exit 0: {help_out}"
+    );
+    assert!(
+        !help_out.contains("missing binary name"),
+        "nubx --help must show help, not the missing-bin error: {help_out}"
+    );
+    assert!(
+        help_out.to_lowercase().contains("usage"),
+        "nubx --help must render usage/help: {help_out}"
+    );
+
+    let ver = Command::new(&nubx)
+        .arg("--version")
+        .output()
+        .expect("spawn nubx --version");
+    let ver_out = String::from_utf8_lossy(&ver.stdout);
+    assert_eq!(ver.status.code(), Some(0), "nubx --version must exit 0");
+    assert!(
+        !String::from_utf8_lossy(&ver.stderr).contains("missing binary name")
+            && ver_out.trim_start().starts_with('v'),
+        "nubx --version must print `v<semver>`, got stdout={ver_out:?}"
+    );
+
+    // A leading flag that ISN'T a meta-flag still reaches the missing-bin error
+    // (e.g. `nubx --node` with no bin) — the fix must not swallow that.
+    let bare = Command::new(&nubx)
+        .arg("--node")
+        .output()
+        .expect("spawn nubx --node");
+    assert_ne!(
+        bare.status.code(),
+        Some(0),
+        "nubx --node with no bin must still error"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ── Section 7: pnpm workspace behavior tests ────────────────────
 
 /// --bail: when a workspace package fails, stop execution.

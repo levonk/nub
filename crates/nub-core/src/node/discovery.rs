@@ -78,7 +78,7 @@ pub enum DiscoveryError {
     /// download+install from nodejs.org failed. Names the version + pin source +
     /// the underlying reason so the user can act (network/proxy, or pre-install).
     #[error(
-        "failed to provision Node {version} (pinned via {pin_source}): {reason}\n\
+        "ERR_NUB_NODE_PROVISION_FAILED: failed to provision Node {version} (pinned via {pin_source}): {reason}\n\
          \x20\x20Check your network / proxy, or pre-install Node {version} so it's on PATH."
     )]
     ProvisionFailed {
@@ -1383,6 +1383,12 @@ mod tests {
         assert!(msg.contains(".node-version"), "names the pin source: {msg}");
         assert!(msg.contains("404 Not Found"), "includes the reason: {msg}");
         assert!(msg.contains("pre-install"), "offers a way forward: {msg}");
+        // A provisioning failure carries nub's stable, branded code so it surfaces
+        // like the rest of the CLI's coded errors instead of a bare `Error:` line.
+        assert!(
+            msg.contains("ERR_NUB_NODE_PROVISION_FAILED"),
+            "carries the branded error code: {msg}"
+        );
     }
 
     #[test]
