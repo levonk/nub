@@ -1300,7 +1300,7 @@ mod tests {
             ),
         ] {
             assert!(o.file, "user file must suppress nub's file");
-            assert!(o.flag == false, "user file must NOT suppress the flag");
+            assert!(!o.flag, "user file must NOT suppress the flag");
         }
 
         // Explicit flag control (positive or negation, argv or env) → manual
