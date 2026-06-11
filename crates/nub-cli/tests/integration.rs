@@ -490,15 +490,26 @@ fn jsonc_import_works() {
 }
 
 #[test]
-fn version_flag_works() {
+fn version_flag_copies_nodes_format_with_resolved_node_on_stderr() {
     let output = Command::new(nub_binary())
         .arg("--version")
         .output()
         .expect("failed to spawn nub");
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // stdout copies `node --version`: exactly `v<semver>`, nothing else — so
+    // `$(nub --version)` is drop-in for scripts that parse node's output.
     assert!(
-        stdout.starts_with("nub "),
-        "version output should start with 'nub ': {stdout}"
+        stdout.trim().starts_with('v')
+            && stdout.trim()[1..].split('.').count() == 3
+            && !stdout.contains("nub"),
+        "stdout must be bare v<semver>: {stdout:?}"
+    );
+    // The resolved Node is informative stderr, never stdout (best-effort; on a
+    // box with a PATH node it must appear with its provenance).
+    assert!(
+        stderr.contains("node v"),
+        "resolved node belongs on stderr: {stderr:?}"
     );
     assert_eq!(output.status.code(), Some(0));
 }

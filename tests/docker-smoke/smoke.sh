@@ -38,9 +38,9 @@ export XDG_STATE_HOME="$SANDBOX/xdg/state"
 mkdir -p "$HOME"
 
 # ── 1. Binary starts; version is a semver string ─────────────────────────────
-ver="$("$NUB" --version 2>&1)"
-# Real output is `nub X.Y.Z` (accf251); accept the bare form too.
-echo "$ver" | grep -qE '^(nub )?[0-9]+\.[0-9]+\.[0-9]+' || fail "--version returned non-semver: '$ver'"
+ver="$("$NUB" --version 2>/dev/null)"
+# Copies node's format: bare `v<semver>` on stdout (resolved node goes to stderr).
+echo "$ver" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail "--version returned non-semver: '$ver'"
 pass "--version: $ver"
 
 # ── 2. TypeScript run (transpile + execute) ───────────────────────────────────

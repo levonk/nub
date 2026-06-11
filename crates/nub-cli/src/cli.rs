@@ -916,10 +916,23 @@ fn run_nub() -> Result<i32> {
     }
 
     if version {
-        // Pure, CI-greppable: just the Nub version. The resolved Node version and
-        // its path live under `nub node` / `nub node which` (which carry the
-        // project-relative resolution context that doesn't belong on --version).
-        println!("nub {}", env!("CARGO_PKG_VERSION"));
+        // Copy node's own format: a bare `v<semver>` on stdout, so `$(nub --version)`
+        // drops into anything that already parses `node --version`. The resolved
+        // Node rides on STDERR — informative for a human, invisible to `$(...)` —
+        // and is best-effort: discovery failure never fails `--version` (no pin
+        // resolution context is required to report nub's own version).
+        // Supersedes the 2026-06-04 "pure --version, no node info" record
+        // (accf251); ruled by the maintainer 2026-06-11.
+        println!("v{}", env!("CARGO_PKG_VERSION"));
+        if let Ok(cur) = env::current_dir() {
+            if let Ok(node) = nub_core::node::discovery::discover_node(&cur) {
+                let provenance = match &node.pin_source {
+                    Some(src) => format!("resolved from {src}"),
+                    None => "from PATH".to_string(),
+                };
+                eprintln!("» node v{} ({provenance})", node.version);
+            }
+        }
         return Ok(0);
     }
 
