@@ -2,6 +2,7 @@
 //! process spawning.
 
 pub mod discovery;
+pub mod feature_matrix;
 pub mod flags;
 pub mod spawn;
 pub mod version;

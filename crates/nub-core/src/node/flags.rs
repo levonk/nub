@@ -1,5 +1,15 @@
 //! Version-keyed flag injection with three-stage opt-out merging.
+//!
+//! The version-banded UNFLAG logic and the webstorage gating predicates here are
+//! DERIVED from [`super::feature_matrix`] — the single canonical feature ×
+//! Node-version mitigation table. This module no longer carries its own copy of
+//! those bands; it iterates the matrix (`unflag_flags_for`) and reads the
+//! webstorage feature's bands. Edit the matrix, not a parallel table here. The
+//! always-inject flags below (`--enable-source-maps`) and the two version-gated
+//! hygiene injections (`--disable-warning`, `--test-coverage-exclude`) are nub's
+//! own startup hygiene, not user-facing *features*, so they stay local.
 
+use super::feature_matrix::{self, Mitigation};
 use super::version::NodeVersion;
 
 /// Flags Nub injects on EVERY supported Node version. `--enable-source-maps` has
@@ -17,45 +27,38 @@ const ALWAYS_INJECT: &[&str] = &["--enable-source-maps"];
 /// better than refusing to start. Verified against real Node 18.19 / 20.11 / 22.13.
 const MIN_DISABLE_WARNING: NodeVersion = NodeVersion::new(20, 11, 0);
 
-/// `--experimental-webstorage` + `--localstorage-file` landed in Node 22.4.0.
-/// Below it both are "bad option" — so nub's default-on webstorage must be gated
-/// on this floor (the compat tier 18.19–22.3 simply runs without webstorage).
-pub const MIN_WEBSTORAGE: NodeVersion = NodeVersion::new(22, 4, 0);
-
-/// `--experimental-webstorage` was unflagged (defaults on) in Node 25.0.0 (PR
-/// nodejs/node#57666). At/above this version the `localStorage`/`sessionStorage`
-/// globals are installed without the experimental flag — only `--localstorage-file`
-/// is still required for them to actually exist (Node 26+ leaves the global
-/// undefined, and throws on access, when no file is provided). So nub injects the
-/// EXPERIMENTAL flag only on 22.4–24.x; on 25+ it's a no-op alias (still accepted,
-/// not a "bad option") and is left out. The `--localstorage-file` path, by
-/// contrast, is injected on EVERY supported version >= 22.4 — that's what makes
-/// webstorage present and persistent. Verified empirically on Node 26.2.0 and
-/// against .repos/node (v27 pre): `--localstorage-file` alone exposes a working,
-/// persistent `localStorage`; the flag without the file does not.
-pub const MIN_WEBSTORAGE_NATIVE: NodeVersion = NodeVersion::new(25, 0, 0);
-
-/// Whether the target Node has Web Storage at all (the version floor where
-/// `--experimental-webstorage` / `--localstorage-file` exist). Callers gate the
-/// `--localstorage-file` injection on this so older compat-tier Node isn't handed a
-/// flag it rejects. True for every Node >= 22.4 — including 25/26 where the global
-/// is native (it still needs the file to materialize).
+/// Whether the target Node has Web Storage at all — DERIVED from the matrix: true
+/// iff the `webstorage` feature has ANY mitigation band covering this version
+/// (its floor is 22.4.0, where `--experimental-webstorage` / `--localstorage-file`
+/// first exist; below that both are "bad option"). Callers gate the
+/// `--localstorage-file` injection on this so older compat-tier Node isn't handed
+/// a flag it rejects. True for every Node >= 22.4 — including 25/26 where the
+/// global is native (it still needs the file to materialize). Verified empirically
+/// on Node 26.2.0 and against .repos/node (v27 pre): `--localstorage-file` alone
+/// exposes a working, persistent `localStorage`; the flag without the file does not.
 pub fn webstorage_supported(node_version: &NodeVersion) -> bool {
-    *node_version >= MIN_WEBSTORAGE
+    feature_matrix::feature("webstorage")
+        .mitigation_for(node_version)
+        .is_some()
 }
 
 /// Whether nub must inject the `--experimental-webstorage` FLAG (as opposed to just
-/// the `--localstorage-file` path). Only on the 22.4–24.x band where the feature is
-/// still flag-gated; on 25+ the flag defaults on, so injecting it is unnecessary
-/// (and we leave it off to stay close to plain-Node argv).
+/// the `--localstorage-file` path) — DERIVED from the matrix: true iff the
+/// `webstorage` feature's mitigation at this version is an `Unflag` band (the
+/// 22.4–24.x range, where the feature is still flag-gated). On 25+ the matrix
+/// records a `StorageFile` band (the flag defaults on, PR nodejs/node#57666), so
+/// this returns false and nub injects only `--localstorage-file`.
 ///
 /// Edge case (benign): a 25.0.0 PRERELEASE (e.g. `25.0.0-rc.1`) sorts BELOW 25.0.0
-/// under semver precedence, so it falls in-band here and gets the experimental flag
-/// injected. On a 25.x build the flag is already a default-on no-op alias (accepted,
-/// not a "bad option"), so this is harmless — no behavior change, just an extra
-/// no-op token on the rare RC. Not worth special-casing prereleases.
+/// under semver precedence, so it falls in the Unflag band here and gets the
+/// experimental flag injected. On a 25.x build the flag is already a default-on
+/// no-op alias (accepted, not a "bad option"), so this is harmless — no behavior
+/// change, just an extra no-op token on the rare RC. Not worth special-casing.
 pub fn webstorage_flag_needed(node_version: &NodeVersion) -> bool {
-    *node_version >= MIN_WEBSTORAGE && *node_version < MIN_WEBSTORAGE_NATIVE
+    matches!(
+        feature_matrix::feature("webstorage").mitigation_for(node_version),
+        Some(Mitigation::Unflag(_))
+    )
 }
 
 /// `--test-coverage-exclude=<glob>` landed in Node 22.5.0. Below it the flag does
@@ -72,103 +75,6 @@ pub const MIN_TEST_COVERAGE_EXCLUDE: NodeVersion = NodeVersion::new(22, 5, 0);
 /// Whether the target Node supports `--test-coverage-exclude` (argv or NODE_OPTIONS).
 pub fn test_coverage_exclude_supported(node_version: &NodeVersion) -> bool {
     *node_version >= MIN_TEST_COVERAGE_EXCLUDE
-}
-
-/// Experimental flags Nub unflags, keyed to the EXACT Node versions where the
-/// flag both (a) exists — passing it elsewhere is a hard "bad option" /
-/// "not allowed in NODE_OPTIONS" startup abort — and (b) is still needed (the
-/// feature is behind the flag, not yet default-on).
-///
-/// Each entry carries a list of `[lo, hi)` version bands (inclusive low,
-/// exclusive high; `hi: None` means "open-ended to infinity"). A single `min`
-/// can't express two of these flags: eventsource has a HOLE on the 21.x line
-/// (the flag never shipped there), and sqlite is needed in TWO disjoint bands
-/// (the 22.x and 23.x lines unflagged at different points). Over-injecting a
-/// still-experimental default-true bool (sqlite/websocket after unflag) is a
-/// harmless no-op; UNDER-injecting silently loses the feature; injecting where
-/// the flag DOESN'T EXIST crashes the process. The bands below are tuned so the
-/// flag is present exactly where it both exists and is required.
-///
-/// Every band cites its changelog evidence — do not re-derive; correct the
-/// citation if you find it wrong.
-const UNFLAG_TABLE: &[UnflagEntry] = &[
-    UnflagEntry {
-        flag: "--experimental-vm-modules",
-        // vm.Module / vm.SourceTextModule. Flag added in Node 9.6.0 (#14253) and
-        // NEVER unflagged through Node 26 — `vm.Module` stays experimental and the
-        // flag is always required. So inject across the ENTIRE supported floor
-        // (18.19+). (Previously min:22.15.0 left vm.Module broken on 18.19–22.14.)
-        bands: &[(NodeVersion::new(18, 19, 0), None)],
-    },
-    UnflagEntry {
-        flag: "--experimental-eventsource",
-        // EventSource global (#51575, "add EventSource Client"). Landed on the 22.x
-        // line at 22.3.0 and was backported to the 20.x LTS line at 20.18.0. The
-        // 21.x line was already EOL when it landed, so the flag NEVER existed there
-        // — injecting it on any 21.x is a "bad option" startup crash. Never unflagged
-        // through 26. Injection set: [20.18.0, 21.0.0) ∪ [22.3.0, ∞).
-        bands: &[
-            (
-                NodeVersion::new(20, 18, 0),
-                Some(NodeVersion::new(21, 0, 0)),
-            ),
-            (NodeVersion::new(22, 3, 0), None),
-        ],
-    },
-    // webstorage is NOT in this static table on purpose. It needs a runtime-computed
-    // `--localstorage-file=<path>` injected alongside the flag (the path is keyed on
-    // the workspace, so it can't be a &'static str), and the experimental flag is
-    // version-BANDED (22.4–24.x only — native on 25+) rather than min-gated. Both
-    // pieces live in spawn.rs, gated on `webstorage_supported` / `webstorage_flag_needed`
-    // + `compute_localstorage_path`. See wiki/runtime/webstorage-unflag.md.
-    UnflagEntry {
-        flag: "--experimental-sqlite",
-        // node:sqlite. Flag added in Node 22.5.0 (#53752). Module unflagged (default
-        // import, no flag needed) at 22.13.0 on the 22.x line and at 23.4.0 on the
-        // 23.x line. The flag survives as a default-true bool after unflagging, so
-        // over-injecting in the unflagged range would be a harmless no-op — but it
-        // doesn't EXIST below 22.5.0, so injecting there crashes. Inject only where
-        // the flag both exists and is still required: [22.5.0, 22.13.0) ∪ [23.0.0, 23.4.0).
-        bands: &[
-            (
-                NodeVersion::new(22, 5, 0),
-                Some(NodeVersion::new(22, 13, 0)),
-            ),
-            (NodeVersion::new(23, 0, 0), Some(NodeVersion::new(23, 4, 0))),
-        ],
-    },
-    UnflagEntry {
-        flag: "--experimental-websocket",
-        // WebSocket global. Flag-gated on [20.10.0, 22.0.0) — the global exists on
-        // 20.10+ and all of the 21.x line behind `--experimental-websocket`, then
-        // becomes default-on at 22.0.0 (the flag persists as a default-true bool but
-        // is no longer required; below 20.10.0 it doesn't exist and is a "bad option").
-        // The experimental warning emitted on 22.0–22.3 is already silenced by nub's
-        // `--disable-warning=ExperimentalWarning` (injected ≥20.11). Injection set:
-        // [20.10.0, 22.0.0).
-        bands: &[(
-            NodeVersion::new(20, 10, 0),
-            Some(NodeVersion::new(22, 0, 0)),
-        )],
-    },
-];
-
-struct UnflagEntry {
-    flag: &'static str,
-    /// Inclusive-low / exclusive-high version bands where the flag is injected.
-    /// `hi: None` is open-ended (inject from `lo` to infinity). A version is in
-    /// the injection set iff it falls in ANY band.
-    bands: &'static [(NodeVersion, Option<NodeVersion>)],
-}
-
-impl UnflagEntry {
-    /// Whether this flag should be injected for `node_version` — true iff the
-    /// version lands in any `[lo, hi)` band.
-    fn applies_to(&self, node_version: &NodeVersion) -> bool {
-        self.bands
-            .iter()
-            .any(|(lo, hi)| *node_version >= *lo && hi.as_ref().is_none_or(|hi| node_version < hi))
-    }
 }
 
 /// Compute the flags Nub should inject for the given Node version,
@@ -195,10 +101,25 @@ pub fn compute_inject_flags(
         flags.push("--disable-warning=ExperimentalWarning");
     }
 
-    for entry in UNFLAG_TABLE {
-        if entry.applies_to(&node_version) {
-            flags.push(entry.flag);
+    // The version-banded experimental unflags are DERIVED from the canonical
+    // feature matrix — for each feature whose mitigation at this version is
+    // `Unflag(flag)`, the flag is injected. Tuned per band so the flag is present
+    // exactly where it both EXISTS (else "bad option" / "not allowed in
+    // NODE_OPTIONS" startup abort) and is still REQUIRED (not yet default-on). See
+    // `feature_matrix::FEATURES` for the bands + changelog evidence. (webstorage's
+    // flag is injected separately in spawn.rs, since it pairs with a
+    // runtime-computed `--localstorage-file` path — but its bands live in the same
+    // matrix, read via `webstorage_flag_needed` / `webstorage_supported`.)
+    for flag in feature_matrix::unflag_flags_for(&node_version) {
+        // Skip the webstorage flag here: spawn.rs owns its injection (paired with
+        // the workspace-keyed --localstorage-file), gated on the same matrix bands
+        // via `webstorage_flag_needed`. Injecting it in this static set too would
+        // emit it without the file (the global never materializes) and bypass the
+        // user-override suppression spawn.rs applies.
+        if flag == "--experimental-webstorage" {
+            continue;
         }
+        flags.push(flag);
     }
 
     // Stage 2: parse user opt-outs from argv and NODE_OPTIONS.
