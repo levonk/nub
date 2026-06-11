@@ -19,7 +19,8 @@ WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release -p nub-cli -p nub-native && \
+    cargo build --release -p nub-cli && \
+    RUSTFLAGS="-C target-feature=-crt-static" cargo build --release -p nub-native && \
     mkdir -p /out/runtime && cp -r runtime/. /out/runtime/ && \
     mkdir -p /out/runtime/addons && \
     cp target/release/libnub_native.so /out/runtime/addons/nub-native.node && \

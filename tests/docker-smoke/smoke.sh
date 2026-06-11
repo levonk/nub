@@ -39,7 +39,8 @@ mkdir -p "$HOME"
 
 # ── 1. Binary starts; version is a semver string ─────────────────────────────
 ver="$("$NUB" --version 2>&1)"
-echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+' || fail "--version returned non-semver: '$ver'"
+# Real output is `nub X.Y.Z` (accf251); accept the bare form too.
+echo "$ver" | grep -qE '^(nub )?[0-9]+\.[0-9]+\.[0-9]+' || fail "--version returned non-semver: '$ver'"
 pass "--version: $ver"
 
 # ── 2. TypeScript run (transpile + execute) ───────────────────────────────────
