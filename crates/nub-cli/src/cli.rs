@@ -2161,13 +2161,23 @@ fn build_script_command(
 ) -> Result<std::process::Command> {
     use std::process::Command as StdCommand;
 
-    let mut env_vars = if !compat_mode {
-        nub_core::workspace::env::load_env_files(&project.root)
-    } else {
-        Default::default()
-    };
-    // --env-file vars overlay .env (shell still wins), applied here so they flow
-    // through the same Command::env loop below (A19).
+    // `.env` is NODE-SCOPED, not process-scoped (security + correctness, decided
+    // 2026-06-10): nub does NOT eager-inject auto-loaded `.env*` into the whole
+    // `nub run` script process. Each `node` a script spawns loads `.env` itself at
+    // its own startup via the node-hijack (the `nub <file>` / `run_as_node` path
+    // calls load_env_files) — so node tools (tsc/prisma) still get `.env`, but a
+    // NON-node tool (`printenv`/aws/terraform) never receives the project's
+    // secrets (matches npm/pnpm; the prior eager injection leaked them). It also
+    // dissolves the NODE_ENV-cascade bug (bun#9635): the inner node reads the
+    // right `.env.[NODE_ENV]` after an inline `NODE_ENV=…` is set, instead of the
+    // outer load freezing the wrong file's values into the process. The explicit
+    // `--env-file` FLAG is a distinct, user-set surface and still flows process-
+    // wide (overlay below) — it's not auto-discovery. See wiki/runtime/env-loading.md.
+    let mut env_vars: HashMap<String, String> = Default::default();
+    // The explicit `--env-file` FLAG (a user-set surface, captured at startup)
+    // still flows process-wide — it is not auto-`.env` discovery and applies in
+    // every mode. Shell env still wins; applied here so it flows through the same
+    // Command::env loop below (A19).
     overlay_env_file_vars(&mut env_vars);
     let bin_path =
         nub_core::workspace::scripts::bin_path(&project.root, project.workspace_root.as_deref());

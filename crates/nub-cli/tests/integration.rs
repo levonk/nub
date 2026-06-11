@@ -1911,6 +1911,71 @@ fn npm_run_threads_node_execpath() {
     );
 }
 
+/// `.env` loading under `nub run` is NODE-SCOPED, not process-scoped: nub no
+/// longer eager-injects `.env` into the whole script process. Differential
+/// behavior vs npm/pnpm (which never load `.env`) and the bug it fixes:
+///
+///   1. SECURITY — a NON-node tool (`printenv`) in a script must NOT see a
+///      `.env` secret. The eager injection leaked it into every binary a
+///      script called (aws/terraform/curl/…); matching npm, it must be empty.
+///   2. CORRECTNESS — a NODE tool (`node -e …`) in the same script MUST still
+///      see `.env`, because the node-hijack loads it at the node child's own
+///      startup. This is nub's advantage over Bun's blunt "load nothing".
+///   3. NODE_ENV-cascade (bun#9635) — `NODE_ENV=production node …` must read
+///      `.env.production`, not `.env.development`/`.env`. The old eager-outer
+///      load froze the wrong env-file values into the process before the inline
+///      `NODE_ENV` could correct them; node-scoped loading reads the right file.
+///
+/// Unix-only: the `printenv` probe and inline `NODE_ENV=…` script syntax are
+/// POSIX `sh`; the node-scoping itself is platform-agnostic (build_script_command
+/// drops the load on every OS), validated here on the runner that can express it.
+#[cfg(unix)]
+#[test]
+fn run_script_env_is_node_scoped_not_process_scoped() {
+    let fixture = fixtures_dir().join("env-scope");
+    let run = |script: &str, env: &[(&str, &str)]| {
+        let mut cmd = Command::new(nub_binary());
+        cmd.args(["run", script]).current_dir(&fixture);
+        cmd.env("XDG_CACHE_HOME", unique_test_cache());
+        for &(k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().expect("spawn nub");
+        (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+            out.status.code().unwrap_or(-1),
+        )
+    };
+
+    // 1. Non-node tool: `.env` secret must NOT leak (matches npm). `printenv
+    //    SECRET` prints the value + newline when set, and exits non-zero with NO
+    //    output when unset — so an empty stdout (and the non-zero exit) is itself
+    //    proof the secret never reached the process env of a non-node binary.
+    let (leak_out, _leak_err, _leak_code) = run("leak-nonnode", &[]);
+    assert!(
+        !leak_out.contains("leaked123"),
+        "`.env` secret leaked into a NON-node tool — security regression: stdout={leak_out:?}"
+    );
+
+    // 2. Node tool in the same project: `.env` still reaches it via the hijack.
+    let (node_out, node_err, node_code) = run("node-secret", &[]);
+    assert_eq!(node_code, 0, "node-secret script failed: {node_err}");
+    assert!(
+        node_out.contains("SECRET=leaked123"),
+        "a node tool under `nub run` must still get `.env` (node-scoped load): stdout={node_out:?}"
+    );
+
+    // 3. NODE_ENV-cascade: inline `NODE_ENV=production` ⇒ the node child loads
+    //    `.env.production`, not the base `.env` (and not `.env.development`).
+    let (cascade_out, cascade_err, cascade_code) = run("cascade", &[]);
+    assert_eq!(cascade_code, 0, "cascade script failed: {cascade_err}");
+    assert!(
+        cascade_out.contains("ENVFILE=from-production"),
+        "NODE_ENV=production must read `.env.production` (bun#9635 cascade fix); got {cascade_out:?}"
+    );
+}
+
 /// nubx/`exec` on a bin that isn't in node_modules/.bin must SUGGEST the PM dlx
 /// command and exit non-zero — never run a `dlx`/`npx` network fetch (exec.md
 /// 2026-05-26: that hits the registry and can block on an install prompt in CI).
