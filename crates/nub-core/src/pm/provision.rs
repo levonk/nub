@@ -54,8 +54,17 @@ pub struct ProvisionedPm {
 ///
 /// `pin.version` must be present — a [`PmPin`] with no version can't be
 /// provisioned (the caller resolves the spec from a lockfile / `packageManager`
-/// before reaching here). The returned bin is `<version>/package/<bin_subpath>`.
-pub fn provision_pm(pin: &PmPin, store_root: &Path, project_root: &Path) -> Result<ProvisionedPm> {
+/// before reaching here). `resolved_from` is preformatted pin provenance (e.g.
+/// `packageManager`) appended to the `Installing…` announce, mirroring
+/// `provision_node`; `None` where the surrounding output already explains the
+/// install (`nub pm use`, the shim's own announce). The returned bin is
+/// `<version>/package/<bin_subpath>`.
+pub fn provision_pm(
+    pin: &PmPin,
+    store_root: &Path,
+    project_root: &Path,
+    resolved_from: Option<&str>,
+) -> Result<ProvisionedPm> {
     let pm = pin.pm;
     let raw = pin
         .version
@@ -118,6 +127,7 @@ pub fn provision_pm(pin: &PmPin, store_root: &Path, project_root: &Path) -> Resu
         &final_dir,
         pin_hash,
         cfg.auth.as_ref(),
+        resolved_from,
     )?;
     Ok(ProvisionedPm {
         bin,
@@ -168,6 +178,7 @@ fn install(
     final_dir: &Path,
     pin_hash: Option<&str>,
     auth: Option<&download::Auth>,
+    resolved_from: Option<&str>,
 ) -> Result<()> {
     // Sibling temp dir on the same filesystem → final placement is an atomic
     // rename. The guard cleans it up on every exit path. A failure here is the
@@ -192,6 +203,10 @@ fn install(
     // pair. Non-TTY (CI logs, pipes) keeps both lines: there's no cursor to
     // rewrite, and the announce timestamp is useful in a log.
     let tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
+    let provenance = match resolved_from {
+        Some(p) => format!(" — resolved from {p}"),
+        None => String::new(),
+    };
     let mut announced = false;
     download::download_to_file_auth(&dist.tarball, &tarball, auth, |_done, total| {
         if !announced {
@@ -201,9 +216,9 @@ fn install(
                 None => String::new(),
             };
             if tty {
-                eprint!("Installing {pm} {}{size}...", dist.version);
+                eprint!("Installing {pm} {}{size}{provenance}...", dist.version);
             } else {
-                eprintln!("Installing {pm} {}{size}...", dist.version);
+                eprintln!("Installing {pm} {}{size}{provenance}...", dist.version);
             }
         }
     })
@@ -466,7 +481,7 @@ mod tests {
             pm: Pm::Pnpm,
             version: Some("9.5.0+sha512.abc".to_string()),
         };
-        let prov = provision_pm(&pin, &store, &store).expect("offline cache hit");
+        let prov = provision_pm(&pin, &store, &store, None).expect("offline cache hit");
         assert_eq!(prov.version, "9.5.0");
         assert!(prov.bin.ends_with("9.5.0/package/bin/pnpm.cjs"));
         let _ = std::fs::remove_dir_all(&store);
@@ -492,7 +507,7 @@ mod tests {
             pm: Pm::Pnpm,
             version: Some("^9".to_string()),
         };
-        let prov = provision_pm(&pin, &store, &store).expect("offline range fallback");
+        let prov = provision_pm(&pin, &store, &store, None).expect("offline range fallback");
         assert_eq!(
             prov.version, "9.5.0",
             "highest cached satisfying version wins"
@@ -506,7 +521,7 @@ mod tests {
             version: Some("9.4.0".to_string()),
         };
         assert!(
-            provision_pm(&exact_miss, &store, &store).is_err(),
+            provision_pm(&exact_miss, &store, &store, None).is_err(),
             "uncached exact pin must not be satisfied by a cached sibling version"
         );
 
@@ -515,7 +530,7 @@ mod tests {
             pm: Pm::Pnpm,
             version: Some("latest".to_string()),
         };
-        assert!(provision_pm(&tag, &store, &store).is_err());
+        assert!(provision_pm(&tag, &store, &store, None).is_err());
         let _ = std::fs::remove_dir_all(&store);
     }
 
@@ -534,7 +549,7 @@ mod tests {
             version: Some("10.0.0".to_string()),
         };
 
-        let prov = provision_pm(&pin, &store, &store).expect("provision pnpm");
+        let prov = provision_pm(&pin, &store, &store, None).expect("provision pnpm");
         assert_eq!(prov.version, "10.0.0");
         assert!(prov.bin.is_file(), "the resolved bin must be on disk");
 
@@ -550,7 +565,7 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "10.0.0");
 
         // Second call: silent cache hit, identical path.
-        let again = provision_pm(&pin, &store, &store).expect("cache hit");
+        let again = provision_pm(&pin, &store, &store, None).expect("cache hit");
         assert_eq!(again, prov);
 
         // Wiring check for the pin hash on the real download path: a FRESH store
@@ -564,7 +579,7 @@ mod tests {
             pm: Pm::Pnpm,
             version: Some(format!("10.0.0+sha512.{}", "0".repeat(128))),
         };
-        let err = format!("{:#}", provision_pm(&bad, &fresh, &fresh).unwrap_err());
+        let err = format!("{:#}", provision_pm(&bad, &fresh, &fresh, None).unwrap_err());
         assert!(
             err.contains("pin hash mismatch"),
             "a wrong pin hash must fail the download path closed, got: {err}"

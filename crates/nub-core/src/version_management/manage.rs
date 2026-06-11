@@ -144,7 +144,7 @@ fn install_concrete(
         }
     }
 
-    provision_node(&concrete, host, store_root_of(store))
+    provision_node(&concrete, host, store_root_of(store), None)
         .with_context(|| format!("installing Node {concrete}"))?;
     Ok(InstallOutcome::Installed(concrete))
 }

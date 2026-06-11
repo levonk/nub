@@ -221,17 +221,24 @@ impl Drop for WorkGuard {
 }
 
 /// Download + verify + extract a stock Node into nub's store, returning the
-/// version dir `<store_root>/node/<version>/`. uv-style silent install: a single
-/// `Installing…` line + a `✓ Installed…` line on STDERR (never stdout), no
-/// prompt, identical in TTY/non-TTY. The SHA-256 is verified BEFORE extraction
-/// (executables landing on disk), and the install is atomic — extract into a
-/// sibling temp dir, then `rename` into place, so a crash or a concurrent run
-/// never leaves a half-extracted dir masquerading as a cached version. An
-/// already-installed version short-circuits with no network + no output.
+/// version dir `<store_root>/node/<version>/`. uv-style output on STDERR (never
+/// stdout), no prompt, matching the PM provisioner in `pm::provision`: the
+/// `Installing…` announce appears BEFORE the download (a slow fetch isn't
+/// silence) and on a TTY the `✓ Installed…` line OVERWRITES it — a finished
+/// session shows one line. Non-TTY (CI logs, pipes) keeps both lines.
+/// `resolved_from` is preformatted pin provenance (e.g. `.node-version (26)`)
+/// appended to the announce so logs say WHY this version was chosen; `None` for
+/// explicit installs (`nub node install`), where the user just typed it. The
+/// SHA-256 is verified BEFORE extraction (executables landing on disk), and the
+/// install is atomic — extract into a sibling temp dir, then `rename` into
+/// place, so a crash or a concurrent run never leaves a half-extracted dir
+/// masquerading as a cached version. An already-installed version
+/// short-circuits with no network + no output.
 pub fn provision_node(
     version: &NodeVersion,
     host: &HostTarget,
     store_root: &Path,
+    resolved_from: Option<&str>,
 ) -> Result<PathBuf> {
     let node_store = store_root.join("node");
     let final_dir = node_store.join(version.to_string());
@@ -252,16 +259,23 @@ pub fn provision_node(
 
     let started = Instant::now();
     let tarball = work.join(&art.tarball_filename);
+    let tty = std::io::IsTerminal::is_terminal(&std::io::stderr());
+    let provenance = match resolved_from {
+        Some(p) => format!(" — resolved from {p}"),
+        None => String::new(),
+    };
     let mut announced = false;
     let sha = download::download_to_file(&art.tarball_url, &tarball, |_done, total| {
         if !announced {
             announced = true;
-            match total {
-                Some(t) => eprintln!(
-                    "Installing Node {version} from nodejs.org ({} MB)...",
-                    t / 1_000_000
-                ),
-                None => eprintln!("Installing Node {version} from nodejs.org..."),
+            let size = match total {
+                Some(t) => format!(" ({} MB)", t / 1_000_000),
+                None => String::new(),
+            };
+            if tty {
+                eprint!("Installing Node {version} from nodejs.org{size}{provenance}...");
+            } else {
+                eprintln!("Installing Node {version} from nodejs.org{size}{provenance}...");
             }
         }
     })
@@ -284,8 +298,11 @@ pub fn provision_node(
         }
     }
 
+    // \r + clear-to-EOL rewrites the announce line on a TTY (it was printed
+    // without a newline there); non-TTY just gets the second line.
+    let rewrite = if tty { "\r\x1b[K" } else { "" };
     eprintln!(
-        "✓ Installed Node {version} in {:.1}s",
+        "{rewrite}✓ Installed Node {version} in {:.1}s",
         started.elapsed().as_secs_f64()
     );
     Ok(final_dir)
@@ -476,7 +493,7 @@ mod tests {
         let store = std::env::temp_dir().join(format!("nub-prov-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&store);
 
-        let dir = provision_node(&version, &host, &store).expect("provision");
+        let dir = provision_node(&version, &host, &store, None).expect("provision");
         assert!(
             version_dir_has_node(&dir),
             "installed node binary must be present"
@@ -488,7 +505,7 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "v22.13.0");
 
         // Second call short-circuits (cache hit) to the same dir, no re-download.
-        let again = provision_node(&version, &host, &store).expect("cache hit");
+        let again = provision_node(&version, &host, &store, None).expect("cache hit");
         assert_eq!(again, dir);
         let _ = std::fs::remove_dir_all(&store);
     }

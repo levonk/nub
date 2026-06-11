@@ -3690,8 +3690,9 @@ fn provision_pm_humanized(
     pin: &nub_core::pm::resolve::PmPin,
     store: &Path,
     cwd: &Path,
+    resolved_from: Option<&str>,
 ) -> Result<nub_core::pm::provision::ProvisionedPm> {
-    nub_core::pm::provision::provision_pm(pin, store, cwd)
+    nub_core::pm::provision::provision_pm(pin, store, cwd, resolved_from)
         .map_err(|e| humanize_transport_error(e, &nub_core::pm::registry::registry_base(cwd)))
 }
 
@@ -3753,13 +3754,11 @@ fn run_pm(args: &[String]) -> Result<i32> {
                 ),
                 PmTarget::Provision(pin) => {
                     let store = pm_store_root()?;
-                    let prov = provision_pm_humanized(&pin, &store, &cwd)?;
-                    let provenance = format!(
-                        "resolved from {} ({}@{})",
-                        res.source.expect("Provision carries a source"),
-                        pin.pm,
-                        prov.version
-                    );
+                    let source = res.source.expect("Provision carries a source");
+                    let prov =
+                        provision_pm_humanized(&pin, &store, &cwd, Some(&source.to_string()))?;
+                    let provenance =
+                        format!("resolved from {source} ({}@{})", pin.pm, prov.version);
                     (prov.bin, provenance)
                 }
                 PmTarget::BerryNoYarnPath => bail!(berry_no_yarn_path_msg()),
@@ -4027,7 +4026,7 @@ fn resolve_provision_declare(
             pm,
             version: Some(format!("{}+sha512.{hex}", dist.version)),
         };
-        provision::provision_pm(&pin, &store, cwd)
+        provision::provision_pm(&pin, &store, cwd, None)
             .map_err(|e| humanize_transport_error(e, &cfg.base))?;
     }
 
@@ -4536,7 +4535,7 @@ fn shim_plan(
                 );
             }
             // Cache-first: an exact pin already in the store is zero-network.
-            let prov = nub_core::pm::provision::provision_pm(&pin, &pm_store_root()?, cwd)?;
+            let prov = nub_core::pm::provision::provision_pm(&pin, &pm_store_root()?, cwd, None)?;
             let bin = shim::sibling_bin(&prov.bin, bin_entry)?;
             exec_under_project_node(cwd, bin, args)
         }
@@ -4564,7 +4563,7 @@ fn shim_plan(
                 pm: invoked.pm(),
                 version: Some(spec),
             };
-            let prov = nub_core::pm::provision::provision_pm(&pin, &pm_store_root()?, cwd)?;
+            let prov = nub_core::pm::provision::provision_pm(&pin, &pm_store_root()?, cwd, None)?;
             let bin = shim::sibling_bin(&prov.bin, invoked.bin_entry())?;
             exec_under_project_node(cwd, bin, args)
         }
@@ -6050,7 +6049,7 @@ mod tests {
         // A dishonest hash would fail closed here.
         let fresh = pm_tmpdir("use-net-fresh-store");
         let pin = nub_core::pm::resolve::resolve_pin(&dir).expect("the pin just written");
-        nub_core::pm::provision::provision_pm(&pin, &fresh, &dir)
+        nub_core::pm::provision::provision_pm(&pin, &fresh, &dir, None)
             .expect("a fresh store must verify and install from the written pin hash");
         let _ = std::fs::remove_dir_all(&fresh);
     }
