@@ -297,7 +297,7 @@ A drop-in replacement for `npm run` and `pnpm run` — an order of magnitude fas
 - **`npm_*` env vars** — set, like your scripts expect
 - **`node_modules/.bin` resolution** — member's `.bin` first, then workspace root, then ancestors; matches pnpm/yarn/bun in monorepos
 - **`pre<x>` / `post<x>` lifecycle hooks** — run for arbitrary user scripts
-- **`.npmrc#script-shell`** — honored (the rest of `.npmrc` is package-manager territory, explicitly ignored)
+- **`.npmrc#script-shell`** — honored (the only `.npmrc` key the script runner reads)
 
 Trailing flags pass through to the script without a `--` separator, same as `bun run`:
 
