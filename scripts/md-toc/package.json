@@ -1,0 +1,10 @@
+{
+  "name": "md-toc",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Dump a markdown file's heading structure with exact line ranges for targeted Read calls",
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.2"
+  }
+}
