@@ -27,6 +27,8 @@ The tracker is extensible by design: new efforts get a new ID and a new row. You
 
 **Sub-agents are instruments, not deciders.** A probe returns *facts* — divergences, traces, measurements, file paths, exact error messages — not verdicts. No sub-agent autonomously lands a change to a default / security posture / product behavior / API-config-env surface / error-contract; those route back to the human as a question. Mechanical / clearly-a-bug fixes may land (you review the diff). Every sub-agent prompt is **self-contained**: embed the codebase map slice, the exact task, any relevant context — a model switch starts a fresh cache, so nothing carries over from the orchestrator's context.
 
+**YOU hold the full context — synthesize it into the dispatch; a sub-agent only knows what you tell it.** A sub-agent starts with a fresh cache and zero awareness of everything that's happened across the effort — every superseded number, reversed decision, renamed thing, or newer finding. If you hand it a task without folding in the CURRENT state, it will faithfully act on stale or wrong assumptions and produce confidently-wrong output (a homepage line with a benchmark number that three investigations ago became obsolete). Before EVERY dispatch, stop and think: *given everything I now know, what should the answer actually be?* — then encode that synthesized direction in the prompt. This is not optional relaying; it is the orchestrator's central cognitive job. Especially: catch STALE/SUPERSEDED info (a number that a later benchmark overturned, a claim a later probe disproved) and a tempting-but-UNVERIFIED claim (a figure from a non-neutral harness or special config) — resolve which is true *yourself* before the sub-agent bakes the wrong one into a user-facing artifact. (the maintainer, 2026-06-11: "you're the only one with full context… use your brain power to figure out exactly what needs to be done by the sub-agent.")
+
 **Be proactive on obvious bugs — fix, don't surface-and-wait.** When an investigation/review turns up an obvious, clear-cut bug (a correctness failure, a false claim, a broken contract), just dispatch the fix and report it done — do NOT surface it and wait for the human to say "fix it." The line is bug-vs-decision, not big-vs-small: a hairy-but-clear correctness fix gets fixed; a one-line *posture/default* change still routes to the human. Asking permission to fix an obvious bug wastes the human's attention and stalls the work. (the maintainer, 2026-06-11: "be more proactive when you find obvious known bugs like this.")
 
 **CRITICAL: only the orchestrator edits the tracker/handoff doc.** Sub-agents must never directly modify it — they return results to you, and you update the doc. Parallel agents writing the same control surface clobber each other's updates, which is how efforts get lost. The tracker is yours; sub-agents speak to you.
@@ -47,6 +49,16 @@ Pattern: *cheap tier gathers & packages → Opus does the real engineering → S
 **Re-verify cheap-tier load-bearing claims yourself.** A Haiku "this is a security bug" or "these two diverge" is a *lead, not a fact*; confirm it against code or a foreground experiment before acting on it. Cheap-tier verdicts have mislabeled headless-TTY limits as "permissions," produced code-review instead of empirical results, and found real bugs whose verdicts still needed re-confirmation. Trust the data they harvest; validate the conclusions.
 
 ---
+
+## Targeted tests, not the whole suite — and the orchestrator says WHICH
+
+A sub-agent told to "make sure nothing broke" will run *everything* — the full `cargo test --workspace`, every bats harness, a from-scratch rebuild — and burn 20+ minutes on what should be a self-contained task. "Thorough" does NOT mean "run literally every test." It means run the RIGHT tests: the modules the change touched + the load-bearing contracts at risk. The orchestrator holds the context for what's at risk, so the orchestrator must SPECIFY the targeted set in the dispatch — never leave "run the tests" open-ended.
+
+- **Scope to what changed.** `cargo test -p <touched-crate> <module>` for the crate/module edited — not `--workspace`. Reserve the full suite for a genuine final gate, or when a targeted run surfaces something that warrants widening.
+- **Incremental builds, always.** Never blow away `target/` for a verification; an incremental rebuild after a merge is minutes, a from-scratch one is much worse.
+- **Slow harnesses only when their contract is touched.** Real-PM conformance/conversion harnesses (which spin up actual npm/pnpm/bun installs) are minutes each — run them only when the change touches the install/lockfile contract they guard, not reflexively.
+- **Benchmarks need a QUIET machine.** NEVER run a benchmark concurrent with a heavy build/test (or another benchmark) — CPU/disk contention contaminates the numbers into garbage. Serialize: let heavy work finish, then benchmark alone. (Burned 2026-06-11: ran a benchmark during a 20-min sync build; numbers were meaningless.)
+- **Calibrate per change.** A 5-line flag gate needs its own module's test + a quick behavior check, not the universe. A lockfile-format change needs the conformance harness. Match the test scope to the blast radius — that judgment is the orchestrator's, encoded in the prompt.
 
 ## Match the depth to the task's spirit
 
@@ -132,6 +144,20 @@ Discipline:
 - **Verify agent status with the task-status tool, NOT file mtime.** A blocked-on-child agent (one that spawned a nested agent and is awaiting it) does not write its own output, so its file looks stale even though it is still running — mtime will tell you "done ~20 min ago" when it is actually mid-flight. Use the structured task-output/status check (`block:false`) to get the true `running`/`completed` state. (Calibrated 2026-06-11: an mtime audit wrongly flagged a still-running Docker probe as a dropped thread.)
 - **Never Read a local-agent's `.output` file directly** — it is the full JSONL transcript and overflows your context. Use the task-status tool for status, and rely on the completion notification (or the agent's returned final message) for the result.
 - **If a completion was missed, recover it:** the agent's final message is the deliverable; retrieve it via the task tool and fold it. Do not re-dispatch a duplicate — that burns quota and races the original.
+
+## Autonomous mode — when the human steps away
+
+The human can flip the workflow into **autonomous mode** (e.g. "I'm leaving for several hours, switch to non-interactive — keep making progress without me"). This is a distinct operating mode with its own rules. **Record the flag durably in the tracker** (a prominent "AUTONOMOUS MODE: ON" banner) so it survives context compaction, and check it before any human-facing question.
+
+What changes when autonomous mode is ON:
+
+- **Never ask the human a question.** Before EVERY would-be `AskUserQuestion`, check the autonomous flag. If on, you do NOT ask — a blocking modal would stall ALL progress until they return (hours). The question tool is effectively disabled.
+- **Bias HARD toward action.** The default is to *resolve and proceed*, not to pause. Keep the machine busy: always have the next thing dispatched; run the queue as a continuous series; on running dry, do a completeness pass and generate more work.
+- **Resolve decisions yourself or via a strong sub-agent.** For a decision that would normally route to the human: reason it out, or spin up a smart (Opus/Fable) sub-agent to reach a well-justified conclusion — *then make the call.* Prefer any recommendation already on record. **Document every autonomous decision + its rationale** in a tracker log so the human can review/override on return. (The standing "don't autonomously land a default/security/product decision" rule is *relaxed by the human's explicit delegation* — but you still document, and you still don't make truly irreversible high-stakes brand/public-API guesses; see next.)
+- **Only a TRUE blocker gets parked.** If — even after a smart sub-agent's analysis — a decision is genuinely irreversible/high-stakes (a public-API/brand/major-product call a wrong guess would damage) and you're genuinely uncomfortable, add it to a "Pending for human" list in the tracker and MOVE ON to other work. Parking is the rare exception; resolving is the default. Never stall the whole effort waiting on one parked item.
+- **All other hard rules still hold:** flag-review every vendored-fork change before it counts as landed; targeted tests not the whole suite; benchmarks on a quiet machine; small frequent commits; the dispatch ledger and reconcile-first discipline.
+
+When the human re-enables interactive mode, flip the flag off and resume surfacing decisions/questions normally — starting by walking them through the "decisions made autonomously" log and any parked blockers.
 
 ## Dynamic, not pre-planned
 
