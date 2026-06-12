@@ -18,6 +18,9 @@
 
 - [ ] Handle empty files
 - [x] Handle fenced code blocks
+- [-] Support Windows line endings (cancelled — out of scope)
+- [>] Add YAML front-matter parsing (deferred to v2)
+- [?] Should nested todos inherit parent status? (blocked on answer)
 
 ```js
 // This [ ] should NOT be parsed as a todo

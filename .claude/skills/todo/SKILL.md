@@ -1,21 +1,24 @@
 ---
 name: todo
 description: Parse status-tagged todo lines from a markdown file — filter by status, section, or get a quick tally — without loading the whole file.
-version: 1.0.0
+version: 1.1.0
 ---
 
-# todo — parse `[ ]`/`[/]`/`[x]` todo lines from markdown
+# todo — parse status-box todo lines from markdown
 
 When a todo file is long, run the parser to extract just the items you care about instead of loading the whole file.
 
 ## Convention
 
-Every todo line carries a status box, optionally after a list marker and indent:
+Every todo line carries a status box, optionally after a list marker and indent. Six markers:
 
 ```
-- [ ]  not started / pending
+- [ ]  todo / not started
 - [/]  in progress
 - [x]  done  (case-insensitive)
+- [-]  cancelled / dropped
+- [>]  deferred / forwarded
+- [?]  question / blocked-on-answer
 ```
 
 Lines inside fenced code blocks are excluded. Each item is tagged with the nearest enclosing `##`/`###` heading as its section context.
@@ -34,10 +37,14 @@ nub scripts/todo/index.mjs <file.md> [flags]
 --pending, --todo       show [ ] items only
 --in-progress, --wip    show [/] items only
 --done                  show [x] items only
---not-done              show [ ] + [/]  (everything unfinished)
+--cancelled, --dropped  show [-] items only
+--deferred              show [>] items only
+--question, --blocked   show [?] items only
+--not-done              live actionable set: [ ] + [/] + [?]
+                        (excludes done, cancelled, and deferred)
 
 --section <substring>   limit to todos under headings matching substring
---counts                print tally (N pending / N in-progress / N done) and exit
+--counts                print tally (all six categories) and exit
 --json                  machine-readable JSON array
 
 --help, -h              usage
@@ -59,10 +66,15 @@ L20  [x]  Handle fenced code blocks [Edge cases]
 `--counts` output:
 
 ```
-pending:     5
-in-progress: 2
-done:        4
+pending:      5
+in-progress:  2
+question:     1
+deferred:     1
+done:         4
+cancelled:    1
 ```
+
+`--not-done` is the fastest way to reconstruct "what's left to act on" after a context reset — `[?]` (questions) count as actionable (answer them); `[>]` deferred and `[-]` cancelled do not.
 
 ## Examples
 

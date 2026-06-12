@@ -7,15 +7,22 @@
  *   nub  scripts/todo/index.mjs <file.md> [flags]
  *
  * Status markers:
- *   [ ]  pending / not started
+ *   [ ]  todo / not started
  *   [/]  in progress
  *   [x]  done (case-insensitive)
+ *   [-]  cancelled / dropped
+ *   [>]  deferred / forwarded
+ *   [?]  question / blocked-on-answer
  *
  * Flags:
- *   --pending / --todo      show pending [ ] items
- *   --in-progress / --wip   show in-progress [/] items
- *   --done                  show done [x] items
- *   --not-done              show pending + in-progress
+ *   --pending / --todo      show [ ] items
+ *   --in-progress / --wip   show [/] items
+ *   --done                  show [x] items
+ *   --cancelled / --dropped show [-] items
+ *   --deferred              show [>] items
+ *   --question / --blocked  show [?] items
+ *   --not-done              show the live, actionable set: [ ] + [/] + [?]
+ *                           (excludes done, cancelled, and deferred)
  *   --section <substring>   limit to todos under headings matching substring
  *   --counts                print tally only, then exit
  *   --json                  machine-readable JSON output
@@ -26,6 +33,27 @@
  */
 
 import { readFileSync } from 'node:fs';
+
+// ── status model ─────────────────────────────────────────────────────────────
+
+// marker char (lowercased) → canonical status name
+const MARKER_STATUS = {
+  ' ': 'pending',
+  '/': 'in-progress',
+  'x': 'done',
+  '-': 'cancelled',
+  '>': 'deferred',
+  '?': 'question',
+};
+const STATUS_SYMBOL = {
+  pending: '[ ]',
+  'in-progress': '[/]',
+  done: '[x]',
+  cancelled: '[-]',
+  deferred: '[>]',
+  question: '[?]',
+};
+const STATUS_ORDER = ['pending', 'in-progress', 'question', 'deferred', 'done', 'cancelled'];
 
 // ── arg parsing ──────────────────────────────────────────────────────────────
 
@@ -38,7 +66,10 @@ Status filters (combinable; default = all):
   --pending, --todo       [ ] not started
   --in-progress, --wip    [/] in progress
   --done                  [x] complete
-  --not-done              [ ] + [/]
+  --cancelled, --dropped  [-] cancelled / dropped
+  --deferred              [>] deferred / forwarded
+  --question, --blocked   [?] question / blocked-on-answer
+  --not-done              live actionable set: [ ] + [/] + [?]
 
 Other flags:
   --section <substring>   only todos under headings matching substring
@@ -54,12 +85,18 @@ if (!filePath) {
   process.exit(1);
 }
 
-const showPending     = args.includes('--pending')     || args.includes('--todo') || args.includes('--not-done');
-const showInProgress  = args.includes('--in-progress') || args.includes('--wip')  || args.includes('--not-done');
-const showDone        = args.includes('--done');
-const anyFilter       = showPending || showInProgress || showDone;
-const countsOnly      = args.includes('--counts');
-const jsonMode        = args.includes('--json');
+const wanted = new Set();
+if (args.includes('--pending') || args.includes('--todo')) wanted.add('pending');
+if (args.includes('--in-progress') || args.includes('--wip')) wanted.add('in-progress');
+if (args.includes('--done')) wanted.add('done');
+if (args.includes('--cancelled') || args.includes('--dropped')) wanted.add('cancelled');
+if (args.includes('--deferred')) wanted.add('deferred');
+if (args.includes('--question') || args.includes('--blocked')) wanted.add('question');
+if (args.includes('--not-done')) ['pending', 'in-progress', 'question'].forEach(s => wanted.add(s));
+const anyFilter = wanted.size > 0;
+
+const countsOnly = args.includes('--counts');
+const jsonMode = args.includes('--json');
 
 const sectionIdx = args.indexOf('--section');
 const sectionFilter = sectionIdx !== -1 ? args[sectionIdx + 1] : null;
@@ -82,9 +119,9 @@ try {
 
 const lines = src.split('\n');
 
-// Regex: optional indent + optional list marker + status box + text
-// Matches: "  - [ ] do something"  or  "[ ] do something"  or  "  * [x] done"
-const TODO_RE = /^(\s*)(?:[-*]\s*)?\[([ /xX])\]\s+(.+)/;
+// optional indent + optional list marker + status box + text.
+// Box char class covers all six markers (`-` last so it's literal).
+const TODO_RE = /^(\s*)(?:[-*]\s*)?\[([ /xX>?-])\]\s+(.+)/;
 const HEADING_RE = /^(#{1,6})\s+(.+)/;
 const FENCE_RE = /^(`{3,}|~{3,})/;
 
@@ -97,7 +134,7 @@ for (let i = 0; i < lines.length; i++) {
   const line = lines[i];
   const lineNo = i + 1;
 
-  // Track fenced code blocks (must match opening fence marker length/char).
+  // Track fenced code blocks (close must match the opening fence char).
   const fenceMatch = line.match(FENCE_RE);
   if (fenceMatch) {
     if (!inFence) {
@@ -109,39 +146,28 @@ for (let i = 0; i < lines.length; i++) {
     }
     continue;
   }
-
   if (inFence) continue;
 
-  // Update current heading context.
+  // Heading context.
   const headingMatch = line.match(HEADING_RE);
   if (headingMatch) {
     currentHeading = headingMatch[2].trim();
     continue;
   }
 
-  // Match todo lines.
+  // Todo lines.
   const todoMatch = line.match(TODO_RE);
   if (!todoMatch) continue;
 
-  const marker = todoMatch[2].toLowerCase();
-  const status = marker === ' ' ? 'pending' : marker === '/' ? 'in-progress' : 'done';
+  const status = MARKER_STATUS[todoMatch[2].toLowerCase()];
   const text = todoMatch[3].trim();
-
   todos.push({ line: lineNo, status, text, section: currentHeading });
 }
 
 // ── filter ───────────────────────────────────────────────────────────────────
 
 let results = todos;
-
-if (anyFilter) {
-  results = results.filter(t =>
-    (showPending    && t.status === 'pending') ||
-    (showInProgress && t.status === 'in-progress') ||
-    (showDone       && t.status === 'done')
-  );
-}
-
+if (anyFilter) results = results.filter(t => wanted.has(t.status));
 if (sectionFilter) {
   const sub = sectionFilter.toLowerCase();
   results = results.filter(t => t.section && t.section.toLowerCase().includes(sub));
@@ -150,14 +176,13 @@ if (sectionFilter) {
 // ── counts ───────────────────────────────────────────────────────────────────
 
 if (countsOnly) {
-  const counts = { pending: 0, 'in-progress': 0, done: 0 };
+  const counts = Object.fromEntries(STATUS_ORDER.map(s => [s, 0]));
   for (const t of todos) counts[t.status]++;
   if (jsonMode) {
     console.log(JSON.stringify(counts));
   } else {
-    console.log(`pending:     ${counts.pending}`);
-    console.log(`in-progress: ${counts['in-progress']}`);
-    console.log(`done:        ${counts.done}`);
+    const width = Math.max(...STATUS_ORDER.map(s => s.length));
+    for (const s of STATUS_ORDER) console.log(`${(s + ':').padEnd(width + 1)} ${counts[s]}`);
   }
   process.exit(0);
 }
@@ -169,19 +194,15 @@ if (results.length === 0) {
   process.exit(0);
 }
 
-const STATUS_SYMBOL = { pending: '[ ]', 'in-progress': '[/]', done: '[x]' };
-
 if (jsonMode) {
   console.log(JSON.stringify(results, null, 2));
   process.exit(0);
 }
 
-// Align line numbers.
 const maxLine = results.reduce((m, t) => Math.max(m, t.line), 0);
 const lineWidth = String(maxLine).length;
-
 for (const t of results) {
   const lineLabel = `L${String(t.line).padStart(lineWidth)}`;
-  const section   = t.section ? ` [${t.section}]` : '';
+  const section = t.section ? ` [${t.section}]` : '';
   console.log(`${lineLabel}  ${STATUS_SYMBOL[t.status]}  ${t.text}${section}`);
 }
