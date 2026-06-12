@@ -22,4 +22,15 @@ echo "=== Regenerating monorepo fixture lockfile ==="
   rm -rf node_modules packages/*/node_modules
 )
 
+echo "=== Regenerating t3 fixture lockfile (pnpm) ==="
+# t3-app: Bun's create-t3-app benchmark fixture — Next16/tRPC11/Drizzle/next-auth/Tailwind4
+# package.json sourced from .repos/bun/bench/install/package.json
+# bun.lock sourced from .repos/bun/bench/install/bun.lock (pre-committed, regen from bun if needed)
+(
+  cd "$FIXTURE_DIR/t3"
+  rm -rf node_modules pnpm-lock.yaml
+  pnpm install --no-frozen-lockfile
+  rm -rf node_modules
+)
+
 echo "Done. Commit the updated lockfiles."
