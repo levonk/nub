@@ -292,3 +292,70 @@ fn ts_resolution_conformance() {
         "require() of a tsconfig-paths alias from a TS parent must resolve (parity with tsc/tsx)"
     );
 }
+
+/// Load-hook fidelity: importing a `data:` URL whose MIME maps to no module format
+/// must surface Node's ERR_UNKNOWN_MODULE_FORMAT — same code, same message, and a
+/// stack with NO nub preload frames — both augmented (`nub`) and on the baseline
+/// Node nub resolves. The bug this guards: nub's fast-tier sync `module.registerHooks`
+/// load hook used to return the default step's `format: null`, which Node's hook
+/// validator (`validateFormat`) rejects with ERR_INVALID_RETURN_PROPERTY_VALUE before
+/// the loader ever reaches the ERR_UNKNOWN_MODULE_FORMAT path — leaking nub's
+/// `preload-common.cjs` frame into the user-visible stack. Differential, fast (two
+/// spawns), so not `#[ignore]`d.
+#[test]
+fn data_url_unknown_format_matches_node() {
+    let nub = nub_binary();
+    let node = baseline_node(&nub)
+        .expect("`nub node which` must resolve a baseline Node for the data:-URL fidelity diff");
+
+    // Inline ESM that imports a data: URL with an unsupported MIME. `--input-type`
+    // lets us drive both binaries with `--eval` and no fixture file.
+    let src = "await import('data:application/x-unknown,hello');";
+    let run = |bin: &Path| -> (String, bool) {
+        let out = Command::new(bin)
+            .args(["--input-type=module", "--eval", src])
+            .stdin(Stdio::null())
+            .output()
+            .expect("spawn for data:-URL diff");
+        // nub prints a one-line `» node …` provenance banner to stderr on some
+        // invocations; strip any such line so the comparison is the error only.
+        let stderr = String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('»'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        (stderr, out.status.success())
+    };
+
+    let (node_err, node_ok) = run(&node);
+    let (nub_err, nub_ok) = run(&nub);
+
+    assert!(
+        !node_ok,
+        "baseline Node should reject the unknown data: format"
+    );
+    assert!(!nub_ok, "nub should reject the unknown data: format too");
+
+    // Code + message: the exact ERR_UNKNOWN_MODULE_FORMAT Node emits.
+    assert!(
+        node_err.contains("ERR_UNKNOWN_MODULE_FORMAT"),
+        "baseline Node must throw ERR_UNKNOWN_MODULE_FORMAT; got:\n{node_err}"
+    );
+    assert!(
+        nub_err.contains("ERR_UNKNOWN_MODULE_FORMAT"),
+        "nub must surface Node's ERR_UNKNOWN_MODULE_FORMAT, not ERR_INVALID_RETURN_PROPERTY_VALUE; got:\n{nub_err}"
+    );
+    assert!(
+        nub_err.contains("Unknown module format: application/x-unknown"),
+        "nub must reproduce Node's exact message; got:\n{nub_err}"
+    );
+
+    // Stack fidelity (issue 3): no nub preload frame may leak into the user-visible
+    // stack for this error.
+    for marker in ["preload-common", "transform-core", "/runtime/"] {
+        assert!(
+            !nub_err.contains(marker),
+            "nub leaked an internal preload frame ({marker}) into the data:-URL error stack:\n{nub_err}"
+        );
+    }
+}

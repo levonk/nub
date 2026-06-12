@@ -20,6 +20,29 @@ const { readdirSync } = require("node:fs");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const { join, dirname, extname: pathExtname } = require("node:path");
 
+// ── data: URL unknown-format fidelity helpers ───────────────────────
+// Mirror Node's internal/modules/esm/get_format.js so nub's sync registerHooks load
+// hook surfaces ERR_UNKNOWN_MODULE_FORMAT for an unsupported `data:` MIME exactly as
+// plain Node does (see the load hook for why the sync tier needs this pre-check).
+// `mimeToFormat`: text/application javascript -> module, application/json -> json,
+// application/wasm -> wasm, anything else -> null (unknown).
+function dataUrlMimeToFormat(mime) {
+  if (mime == null) return null;
+  if (/^\s*(text|application)\/javascript\s*(;\s*charset=utf-?8\s*)?$/i.test(mime)) return "module";
+  if (mime === "application/json") return "json";
+  if (mime === "application/wasm") return "wasm";
+  return null;
+}
+
+// Returns true when `url` is a `data:` URL whose MIME maps to no module format —
+// i.e. the case where Node would ultimately throw ERR_UNKNOWN_MODULE_FORMAT.
+function unknownDataUrlFormat(url) {
+  // Strip the `data:` scheme; Node parses the pathname (everything after `data:`).
+  const m = /^([^/]+\/[^;,]+)(?:[^,]*?)(;base64)?,/.exec(url.slice(5));
+  const mime = m ? m[1] : null;
+  return dataUrlMimeToFormat(mime) === null;
+}
+
 // Yarn PnP API handle, fetched lazily via Node's `module.findPnpApi`. `.pnp.cjs`
 // (injected by the Rust spawn layer via --require, ahead of nub's preload) sets
 // `process.versions.pnp` and installs `findPnpApi`, which returns the pnpapi object
@@ -207,6 +230,30 @@ function makeHooks(core, watchReporting) {
       return core.loadTranspile(url, ext);
     }
     if (ext in core.DATA_EXTS) return core.loadData(url, ext);
+
+    // Fidelity: a `data:` URL whose MIME maps to no module format (e.g.
+    // `data:application/x-unknown,…`) must surface Node's ERR_UNKNOWN_MODULE_FORMAT.
+    // Node's default load returns `format: null` for this, which its ASYNC loader path
+    // later converts to ERR_UNKNOWN_MODULE_FORMAT in validateLoadResult. But nub's SYNC
+    // `module.registerHooks` load hook routes the default step's result through
+    // customization_hooks' validateLoadSloppy -> validateFormat, which accepts only a
+    // string or `undefined` and throws ERR_INVALID_RETURN_PROPERTY_VALUE on `null` —
+    // and it does so INSIDE the `nextLoad` call below (the validator wraps each step),
+    // so nub never gets the result back to normalize it, and nub's own load-hook frame
+    // leaks into the user-visible stack. Vanilla Node, having registered no hook on this
+    // path, never hits that validator and throws the correct ERR_UNKNOWN_MODULE_FORMAT.
+    // Return `format: undefined` (not the default step's `null`) WITHOUT calling the
+    // default load: undefined passes validateFormat, then Node's own
+    // #translate -> validateLoadResult sees format == null and throws the NATIVE
+    // ERR_UNKNOWN_MODULE_FORMAT — byte-identical to plain Node (the `[code]` name
+    // decoration, the exact message, and a stack with zero nub frames). Short-circuit
+    // so the chain stops here; the empty source is never read (the throw precedes any
+    // translation).
+    if (typeof url === "string" && url.startsWith("data:") &&
+        (!context || context.format == null) &&
+        unknownDataUrlFormat(url)) {
+      return { format: undefined, source: "", shortCircuit: true };
+    }
 
     const r = nextLoad(url, context);
     // nub's sync `module.registerHooks` load hook forces the synchronous
