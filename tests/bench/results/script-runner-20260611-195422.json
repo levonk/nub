@@ -1,0 +1,64 @@
+{
+  "results": [
+    {
+      "command": "cd '/tmp/nub-script-runner-bench-yvZDch' && /Users/user/Documents/projects/dun/target/release/nub run noop",
+      "mean": 0.060217666146666675,
+      "stddev": 0.0012294932007930472,
+      "median": 0.06020415248,
+      "user": 0.03393004666666666,
+      "system": 0.01765114,
+      "min": 0.058994985480000005,
+      "max": 0.061453860480000004,
+      "times": [
+        0.06020415248,
+        0.061453860480000004,
+        0.058994985480000005
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "command": "cd '/tmp/nub-script-runner-bench-yvZDch' && pnpm run noop",
+      "mean": 0.4228203748133333,
+      "stddev": 0.0033275077688559008,
+      "median": 0.42287540248,
+      "user": 0.19105504666666664,
+      "system": 0.034644806666666667,
+      "min": 0.41946569448,
+      "max": 0.42612002748,
+      "times": [
+        0.42612002748,
+        0.41946569448,
+        0.42287540248
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "command": "cd '/tmp/nub-script-runner-bench-yvZDch' && corepack pnpm run noop",
+      "mean": 0.4322754441466667,
+      "stddev": 0.004793489309884017,
+      "median": 0.43480665248,
+      "user": 0.19956371333333334,
+      "system": 0.036391473333333334,
+      "min": 0.42674694448,
+      "max": 0.43527273548,
+      "times": [
+        0.42674694448,
+        0.43527273548,
+        0.43480665248
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
