@@ -694,7 +694,7 @@ fn apply_config_scope(
         // Catalog hard-error: a role that doesn't honor `catalog:` specifiers
         // (npm/yarn/bun, pnpm<9) must mirror the real PM and refuse, rather
         // than silently mis-resolve. nub-branded, role-named.
-        if !role_honors_catalog(role, major)
+        if !role_honors_catalog(role, major, minor)
             && let Some(spec) = first_catalog_specifier(&manifest, root)
         {
             return Err(catalog_unsupported_error(role, &spec));
@@ -704,15 +704,27 @@ fn apply_config_scope(
     Ok(())
 }
 
-/// Does the active PM honor `catalog:` specifiers? pnpm@9+ only — every
-/// other PM (npm/yarn/bun) and pnpm<9 hard-error on them. nub identity
-/// honors catalogs (an un-branded cross-tool field, like `workspaces`).
-fn role_honors_catalog(role: config_scope::Role, major: Option<u64>) -> bool {
+/// Does the active PM honor `catalog:` specifiers? pnpm@9+ and bun@1.2+
+/// implement catalogs; npm and yarn do not. nub identity honors catalogs
+/// (an un-branded cross-tool field, like `workspaces`). aube resolves both
+/// dialects: pnpm's `pnpm.catalog(s)` / `pnpm-workspace.yaml` AND bun's
+/// `workspaces.catalog(s)` in `package.json` (see aube's `discover_catalogs`),
+/// so honoring bun here resolves the real catalog rather than mis-failing a
+/// project that works under bun.
+fn role_honors_catalog(role: config_scope::Role, major: Option<u64>, minor: Option<u64>) -> bool {
     use config_scope::Role;
     match role {
+        // pnpm gained catalogs in 9.0.
         Role::Pnpm => major.map(|m| m >= 9).unwrap_or(true),
+        // bun gained catalogs in 1.2.0. Absent/unparseable version → assume a
+        // modern bun and honor (matching the pnpm "assume modern" default).
+        Role::Bun => match (major, minor) {
+            (Some(m), Some(mi)) => (m, mi) >= (1, 2),
+            (Some(m), None) => m >= 2,
+            _ => true,
+        },
         Role::Nub => true,
-        Role::Npm | Role::Yarn | Role::Bun => false,
+        Role::Npm | Role::Yarn => false,
     }
 }
 
@@ -789,8 +801,8 @@ fn catalog_unsupported_error(role: config_scope::Role, spec: &str) -> anyhow::Er
     let pm = role.display();
     anyhow::anyhow!(
         "nub: `catalog:` specifier ({spec}) is not supported — this project uses {pm}, \
-         which doesn't implement catalogs (only pnpm@9+ does). Inline the version, or switch \
-         the project to pnpm (`nub pm use pnpm`)."
+         which doesn't implement catalogs (pnpm@9+ and bun@1.2+ do). Inline the version, or switch \
+         the project to a PM that supports catalogs (`nub pm use pnpm`)."
     )
 }
 
@@ -2011,5 +2023,55 @@ mod tests {
         let spec = first_catalog_specifier(&root_manifest(d.path()), d.path()).unwrap();
         let err = catalog_unsupported_error(Role::Npm, &spec).to_string();
         assert!(err.contains("npm") && err.contains("left-pad"), "{err}");
+    }
+
+    #[test]
+    fn bun_catalog_is_honored_from_1_2_and_refused_below() {
+        // Bun added catalogs in 1.2.0, and aube resolves bun's
+        // `workspaces.catalog` format — so a bun-incumbent project with a
+        // `catalog:` ref must NOT hard-error on modern bun, mirroring real bun.
+        // bun@<1.2 (the pre-catalog era) still refuses.
+        use config_scope::Role;
+
+        assert!(
+            role_honors_catalog(Role::Bun, Some(1), Some(2)),
+            "bun@1.2 implements catalogs"
+        );
+        assert!(
+            role_honors_catalog(Role::Bun, Some(1), Some(5)),
+            "bun@1.5 implements catalogs"
+        );
+        assert!(
+            role_honors_catalog(Role::Bun, Some(2), None),
+            "bun@2 implements catalogs"
+        );
+        assert!(
+            role_honors_catalog(Role::Bun, None, None),
+            "an undeclared/unparseable bun version assumes modern bun and honors"
+        );
+        assert!(
+            !role_honors_catalog(Role::Bun, Some(1), Some(1)),
+            "bun@1.1 predates catalogs and must refuse"
+        );
+        assert!(
+            !role_honors_catalog(Role::Bun, Some(1), Some(0)),
+            "bun@1.0 predates catalogs and must refuse"
+        );
+
+        // A bun-incumbent fixture with a real `catalog:` ref: the preflight
+        // must not surface the hard-error when the version honors catalogs.
+        let d = workspace(&[(
+            "package.json",
+            r#"{"name":"root","packageManager":"bun@1.2.3","workspaces":{"catalog":{"is-odd":"3.0.1"}},"dependencies":{"is-odd":"catalog:"}}"#,
+        )]);
+        let m = root_manifest(d.path());
+        // The specifier is present...
+        assert!(first_catalog_specifier(&m, d.path()).is_some());
+        // ...but a catalog-honoring bun does not refuse it.
+        assert!(role_honors_catalog(Role::Bun, Some(1), Some(2)));
+
+        // npm / yarn never honor catalogs.
+        assert!(!role_honors_catalog(Role::Npm, Some(10), Some(0)));
+        assert!(!role_honors_catalog(Role::Yarn, Some(4), Some(0)));
     }
 }
