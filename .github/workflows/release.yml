@@ -122,6 +122,50 @@ jobs:
           cp target/release/libnub_native.so runtime/addons/nub-native.node
       - run: cargo test
 
+  conformance:
+    name: Lockfile conformance gate (real PMs)
+    needs: verify
+    # The lockfile-compat regression gate that 0.0.35/0.0.36 slipped through:
+    # those releases shipped with the conformance suite RED because publish only
+    # gated on the fast `test:` job, and the conformance/daily-driver/native-dep
+    # suites live in SEPARATE workflows (aube-parity.yml, …) that don't gate the
+    # release. This reproduces tests/aube-conformance/run.sh — nub writes each
+    # foreign lockfile format in a hermetic sandbox and the REAL pinned package
+    # manager judges it (pnpm/npm frozen-accept + zero-churn rewrite, bun
+    # frozen-accept, yarn-mutation refusal, the nub round-trip) — and `publish`
+    # `needs:` it, so a lockfile-compat regression now blocks the release.
+    #
+    # Its OWN serial job (needs: verify only — NOT folded into the build matrix),
+    # deliberately, to avoid the runner-exhaustion the `test:` gate's comment
+    # warns about: this is one real-registry install matrix, run once on ubuntu,
+    # not fanned out across the 8 platform runners. Mirrors the aube-conformance
+    # job in aube-parity.yml (same setup: nub-cli build + pinned pnpm/npm via npx
+    # + pinned bun). Known-red scenarios live in expected-failures.txt and must
+    # shrink — a stale entry fails the job. The addon is NOT needed here: the
+    # harness exercises the PM engine (install/add/pm use), not the data-format
+    # loaders.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # nub-cli has a path dependency into the vendored aube workspace, so the
+      # cargo build can't resolve without this submodule (same as the test gate).
+      - name: Init vendor/aube submodule
+        run: git submodule update --init vendor/aube
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in sync with BUN_PIN in tests/aube-conformance/run.sh.
+          bun-version: "1.3.14"
+      - name: Build nub
+        run: cargo build -p nub-cli
+      - name: Run lockfile conformance matrix
+        run: tests/aube-conformance/run.sh target/debug/nub
+
   build:
     name: Build (${{ matrix.platform }})
     needs: verify
@@ -302,10 +346,13 @@ jobs:
     # published and no GitHub release is cut. Skipping publish also skips
     # test-install (it `needs: publish`).
     if: ${{ github.event_name == 'push' || inputs.publish }}
-    # Gate on the test job too: a broken test must block the release, not just
-    # a broken build. `build` and `test` both fan out from `verify` and run in
-    # parallel; publish waits on both.
-    needs: [build, test]
+    # Gate on the test AND conformance jobs too: a broken test or a
+    # lockfile-compat regression must block the release, not just a broken
+    # build. `build`, `test`, and `conformance` all fan out from `verify`;
+    # publish waits on all three. (The conformance gate is what 0.0.35/0.0.36
+    # slipped through — they published with the real-PM lockfile suite RED
+    # because it only lived in a separate, non-gating workflow.)
+    needs: [build, test, conformance]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
