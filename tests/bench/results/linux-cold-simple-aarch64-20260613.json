@@ -1,0 +1,1 @@
+{"scenario": "cold", "fixture": "simple", "runs": 5, "pnpm": {"times_ms": [3976, 4333, 3859, 3199, 3912], "mean_ms": 3856, "stddev_ms": 368}, "nub": {"times_ms": [1536, 1725, 2394, 2964, 2172], "mean_ms": 2158, "stddev_ms": 506}, "bun": {"times_ms": [2595, 2901, 2047, 1770, 1656], "mean_ms": 2194, "stddev_ms": 480}}
