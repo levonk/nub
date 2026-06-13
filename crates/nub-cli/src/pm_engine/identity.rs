@@ -72,6 +72,17 @@
 /// - `warm_store_verify` = `false` — nub trusts the atomically-published CAS
 ///   and skips the per-file warm-relink stat sweep (was
 ///   `set_warm_store_verify(false)`). Import-time SHA-512 / SRI is untouched.
+/// - `no_churn_lockfile_write` = `true` — nub opts INTO the no-churn write
+///   guard: when an install doesn't change the resolved graph, the lockfile's
+///   bytes/mtime are left untouched. This breaks the rewrite flip-flop where
+///   nub and the project's other PM keep rewriting a graph-equal lockfile into
+///   their own serialization, since nub round-trips a foreign lockfile rather
+///   than imposing its own.
+/// - `read_branded_settings_env` = `false` — nub does NOT read aube's branded
+///   `AUBE_*` settings env-var family; the neutral `npm_config_*` /
+///   `NPM_CONFIG_*` aliases and bare external vars are unaffected. (Mirrors the
+///   brand boundary on the settings-env surface — symmetric with nub's
+///   `read_branded_pnpm_config` posture.)
 pub(crate) const NUB: aube_util::Embedder = aube_util::Embedder {
     name: "nub",
     display_name: "nub",
@@ -91,6 +102,8 @@ pub(crate) const NUB: aube_util::Embedder = aube_util::Embedder {
     self_engines_check: false,
     self_update_enabled: false,
     warm_store_verify: false,
+    no_churn_lockfile_write: true,
+    read_branded_settings_env: false,
 };
 
 /// Register [`NUB`] as the active embedder profile. Idempotent (the engine's
@@ -121,4 +134,6 @@ const _: () = {
     assert!(!NUB.runtime_switching);
     assert!(!NUB.warm_store_verify);
     assert!(!NUB.self_update_enabled);
+    assert!(NUB.no_churn_lockfile_write);
+    assert!(!NUB.read_branded_settings_env);
 };
