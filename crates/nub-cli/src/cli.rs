@@ -33,6 +33,14 @@ static REPORTER_NDJSON: AtomicBool = AtomicBool::new(false);
 /// only; the `$ <cmd>` echo is left intact.
 static HIDE_STREAM_PREFIX: AtomicBool = AtomicBool::new(false);
 
+/// `nubx`-only: turn on the `npx`/`pnpm dlx` fallback in [`run_exec`]. Set once
+/// in [`run_nubx`] before it desugars to the `exec` dispatch; read in `run_exec`
+/// when the bin is absent from `node_modules/.bin`. Plain `nub exec` leaves this
+/// off and keeps its deliberate no-network behavior (a 127 + install suggestion);
+/// only the user-facing `nubx <tool>` entry point fetches-and-runs an uninstalled
+/// tool, matching `npx`/`pnpm dlx` (local-first, DLX as the fallback).
+static NUBX_DLX_FALLBACK: AtomicBool = AtomicBool::new(false);
+
 /// `--reporter <MODE>` for `nub run`. `default` is the existing prefixed /
 /// streamed / aggregated human output; `silent` is `-s`; `ndjson` is machine
 /// output (see [`emit_ndjson`]).
@@ -1492,6 +1500,12 @@ fn run_nubx() -> Result<i32> {
         bail!("nubx: missing binary name\nUsage: nubx [--node] <bin> [args...]");
     }
 
+    // `nubx` is nub's `npx`/`pnpm dlx`: a locally-installed bin runs locally (no
+    // network), and a bin absent from `node_modules/.bin` transparently falls
+    // back to DLX (fetch into a throwaway project + run). Arm that fallback for
+    // the exec path below — `nub exec` itself stays no-network.
+    NUBX_DLX_FALLBACK.store(true, Ordering::Relaxed);
+
     let mut rest = vec!["exec".to_string()];
     rest.extend(args);
     dispatch_subcommand(rest)
@@ -2938,7 +2952,17 @@ fn run_exec(bin: &str, compat_mode: bool, args: &[String]) -> Result<i32> {
         }
     }
 
-    // Not in node_modules/.bin. Per exec.md (decision 2026-05-26): nub does NOT
+    // Not in node_modules/.bin. The `nubx` entry point (and only it) falls back
+    // to DLX here — fetch the tool into a throwaway project and run it, matching
+    // `npx`/`pnpm dlx` (local-first, DLX as the fallback). nub is a complete
+    // package manager, so `nubx <uninstalled-tool>` fetches-and-runs rather than
+    // shelling out to the project's foreign PM. We follow `pnpm dlx` semantics:
+    // no interactive confirm-prompt, just fetch+run (nub is pnpm-compatible).
+    if NUBX_DLX_FALLBACK.load(Ordering::Relaxed) {
+        return crate::pm_engine::run_dlx_for_nubx(bin, args);
+    }
+
+    // Plain `nub exec`. Per exec.md (decision 2026-05-26): `nub exec` does NOT
     // run a `dlx`/`npx` network fetch itself — that hits the registry and can
     // block on an interactive install prompt in CI, the exact failure that
     // decision removed. Print the install / run-ad-hoc suggestion and exit

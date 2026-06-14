@@ -473,6 +473,48 @@ fn run_dlx(typed: &str, args: &[String]) -> Result<i32> {
     finish(session.runtime.block_on(aube::commands::dlx::run(verb)))
 }
 
+/// DLX fallback for the `nubx <tool> [args]` entry point: the bin was absent
+/// from `node_modules/.bin`, so fetch it into a throwaway project and run it,
+/// matching `npx` / `pnpm dlx`. Reuses the engine's `dlx` command end-to-end
+/// (resolve → install into a scratch tempdir → exec the bin → drop the tempdir)
+/// rather than reimplementing the fetch pipeline; the engine itself does a final
+/// local-`.bin` recheck (a no-op here since the caller already missed) before
+/// fetching, and resolves the project's Node pin via the user's cwd. We follow
+/// `pnpm dlx` semantics deliberately: no interactive confirm-prompt — fetch+run.
+///
+/// `<tool>` is passed as the positional (NOT `-p`), so the engine derives the
+/// actual bin name from the installed package's `bin` map when the command name
+/// and package name differ (e.g. `@tanstack/cli` ships `tanstack`). nubx's own
+/// flag handling already split off the bin; everything in `args` is forwarded to
+/// the tool verbatim.
+pub fn run_dlx_for_nubx(bin: &str, args: &[String]) -> Result<i32> {
+    let verb = nubx_dlx_args(bin, args);
+    let session = super::engine_session(None)?;
+    // NOTE: on child failure the engine propagates the child's exit code via
+    // std::process::exit — control does not return here on that path.
+    finish(session.runtime.block_on(aube::commands::dlx::run(verb)))
+}
+
+/// Build the `dlx` invocation for a `nubx <tool> [args]` fallback: `<tool>` is
+/// the positional (so the engine derives the actual bin name from the package's
+/// `bin` map) and `args` forward verbatim. None of dlx's own flags (`-p`, `-c`
+/// shell-mode, `--allow-build`) are in nubx's surface, so they stay at their
+/// safe defaults — matching `npx <tool> [args]` / `pnpm dlx <tool> [args]`.
+fn nubx_dlx_args(bin: &str, args: &[String]) -> aube::commands::dlx::DlxArgs {
+    let mut params = Vec::with_capacity(args.len() + 1);
+    params.push(bin.to_string());
+    params.extend(args.iter().cloned());
+    aube::commands::dlx::DlxArgs {
+        params,
+        shell_mode: false,
+        package: Vec::new(),
+        allow_build: Vec::new(),
+        lockfile: Default::default(),
+        network: Default::default(),
+        virtual_store: Default::default(),
+    }
+}
+
 fn run_create(typed: &str, args: &[String]) -> Result<i32> {
     let (globals, verb): (_, aube::commands::create::CreateArgs) = parse_or_return!(typed, args);
     // Bare `nub create` / leading `--help`: the engine's internal help path
@@ -1075,6 +1117,29 @@ mod tests {
         let (_, pr): (_, aube::commands::patch_remove::PatchRemoveArgs) =
             parse("patch-remove", &["lodash@4.17.21"]);
         assert_eq!(pr.packages, ["lodash@4.17.21"]);
+    }
+
+    /// The `nubx <tool>` DLX fallback (run when the bin is absent from
+    /// `node_modules/.bin`) hands the tool to the engine's `dlx` as a plain
+    /// positional with args forwarded verbatim — `npx`/`pnpm dlx` semantics:
+    /// the tool name doubles as the package (no `-p`, so the engine resolves the
+    /// real bin name from the package's `bin` map), nothing is run through `sh -c`
+    /// (no `-c`), and no lifecycle scripts are auto-approved (no `--allow-build`).
+    #[test]
+    fn nubx_dlx_fallback_forwards_tool_and_args_with_no_dlx_flags() {
+        let verb = nubx_dlx_args("cowsay", &["-f".into(), "tux".into(), "hi there".into()]);
+        // Tool is the positional; args ride after it untouched (a tool flag like
+        // `-f` is the tool's, never consumed by nubx/dlx).
+        assert_eq!(verb.params, ["cowsay", "-f", "tux", "hi there"]);
+        // None of dlx's own flags are part of nubx's surface — they stay default
+        // so the fallback matches a bare `npx cowsay …` / `pnpm dlx cowsay …`.
+        assert!(verb.package.is_empty(), "no -p: tool name is the package");
+        assert!(!verb.shell_mode, "no -c: tool argv must round-trip, not sh -c");
+        assert!(verb.allow_build.is_empty(), "no scripts auto-approved");
+
+        // A tool with no args still produces a single-positional invocation.
+        let bare = nubx_dlx_args("serve", &[]);
+        assert_eq!(bare.params, ["serve"]);
     }
 
     /// The nub-side default edit parent is nub-named (the engine's fallback
