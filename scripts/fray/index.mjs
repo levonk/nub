@@ -79,7 +79,7 @@ const threads = readdirSync(FRAY_DIR)
       if (fm.status && !STATUS.includes(fm.status))
         errors.push(`invalid status "${fm.status}" (expected one of: ${STATUS.join(', ')})`);
     }
-    return { id, title: fm?.title ?? '', status: fm?.status ?? '?', next: nextStep(src), errors };
+    return { id, title: fm?.title ?? '', status: fm?.status ?? '?', next: nextStep(src), text: src, errors };
   });
 
 const allErrors = threads.filter((t) => t.errors.length).map((t) => `  ${t.id}.md: ${t.errors.join('; ')}`);
@@ -94,7 +94,20 @@ if (process.argv.includes('--validate')) {
 }
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify({ config: config(), threads, errors: allErrors }, null, 2));
+  console.log(JSON.stringify({ config: config(), threads: threads.map(({ text, ...t }) => t), errors: allErrors }, null, 2));
+  process.exit(0);
+}
+
+// Substring search across id + title + body — find a thread when you can't recall its slug.
+const qi = process.argv.indexOf('--search');
+if (qi !== -1) {
+  const q = (process.argv[qi + 1] ?? '').toLowerCase();
+  const hits = threads.filter((t) => `${t.id} ${t.title} ${t.text}`.toLowerCase().includes(q));
+  console.log(
+    hits.length
+      ? hits.map((t) => `${t.id} [${t.status}] — ${t.title}`).join('\n')
+      : `no threads match "${q}"`,
+  );
   process.exit(0);
 }
 
