@@ -12,6 +12,7 @@
 mod agents_md;
 mod artifacts;
 mod detect;
+mod package_json;
 mod prompt;
 mod tsconfig;
 
@@ -191,9 +192,10 @@ fn write_agents_md(cwd: &Path, written: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Offer the TypeScript types pickup: merge tsconfig + drop the `nub-env.d.ts`
-/// fallback. Only offered when there's a tsconfig (or the user opts in for a
-/// TS-shaped project). The tsconfig merge is value-level + additive.
+/// Offer the TypeScript types pickup: merge tsconfig, add `@nubjs/types` to
+/// devDependencies, and optionally drop the `nub-env.d.ts` fallback. Only
+/// offered when there's a tsconfig (or the user opts in for a TS-shaped
+/// project). The tsconfig + package.json merges are value-level + additive.
 fn maybe_wire_types(
     cwd: &Path,
     det: &Detection,
@@ -210,7 +212,7 @@ fn maybe_wire_types(
 
     let tsconfig_path = cwd.join("tsconfig.json");
     let text = std::fs::read_to_string(&tsconfig_path)?;
-    let plan = match tsconfig::plan(&text) {
+    let ts_plan = match tsconfig::plan(&text) {
         Ok(p) => p,
         Err(e) => {
             println!("  skipping tsconfig: {e}");
@@ -218,21 +220,25 @@ fn maybe_wire_types(
         }
     };
 
-    if plan.changed {
+    if ts_plan.changed {
         let mut q = format!(
             "Wire nub's types into tsconfig.json (types += {}, lib += es2024{})?",
             tsconfig::TYPES_PACKAGE,
-            if plan.dropped_dom { ", drop dom" } else { "" }
+            if ts_plan.dropped_dom { ", drop dom" } else { "" }
         );
-        if plan.had_comments {
+        if ts_plan.had_comments {
             q.push_str(" [note: comments in tsconfig.json will be removed]");
         }
         if confirm.ask(&q, true) {
-            std::fs::write(&tsconfig_path, &plan.new_text)?;
+            std::fs::write(&tsconfig_path, &ts_plan.new_text)?;
             written.push("tsconfig.json (types wired)".to_string());
+            // Also add @nubjs/types to devDependencies when package.json is present.
+            maybe_add_dev_dep(cwd, det, written)?;
         }
     } else {
         println!("  tsconfig.json already wired for nub's types — no change");
+        // Even if the tsconfig was already wired, the devDep may still be missing.
+        maybe_add_dev_dep(cwd, det, written)?;
     }
 
     // The in-repo fallback `.d.ts` — works without installing `@nubjs/types`
@@ -244,6 +250,32 @@ fn maybe_wire_types(
     ) {
         write_file(cwd, "nub-env.d.ts", NUB_ENV_DTS)?;
         written.push("nub-env.d.ts (types fallback)".to_string());
+    }
+    Ok(())
+}
+
+/// If a `package.json` exists, add `@nubjs/types` to `devDependencies`.
+/// Silently skips when no package.json is present. Idempotent.
+fn maybe_add_dev_dep(cwd: &Path, det: &Detection, written: &mut Vec<String>) -> Result<()> {
+    if !det.has_package_json {
+        return Ok(());
+    }
+    let pkg_path = cwd.join("package.json");
+    let text = std::fs::read_to_string(&pkg_path)?;
+    let plan = match package_json::plan(&text) {
+        Ok(p) => p,
+        Err(e) => {
+            println!("  skipping package.json devDep: {e}");
+            return Ok(());
+        }
+    };
+    if plan.changed {
+        std::fs::write(&pkg_path, &plan.new_text)?;
+        written.push(format!(
+            "package.json (devDependencies += {}@{})",
+            tsconfig::TYPES_PACKAGE,
+            package_json::TYPES_VERSION,
+        ));
     }
     Ok(())
 }
@@ -406,6 +438,119 @@ mod tests {
             agents2.matches(artifacts::STANZA_BEGIN).count(),
             1,
             "exactly one nub stanza after a re-run"
+        );
+    }
+
+    // ── devDependencies (package.json) tests ──
+
+    fn dev_dep_version(pkg_json: &str, pkg: &str) -> Option<String> {
+        let v: serde_json::Value = serde_json::from_str(pkg_json).unwrap();
+        v["devDependencies"][pkg].as_str().map(str::to_string)
+    }
+
+    #[test]
+    fn yes_run_adds_dev_dep_when_package_json_present() {
+        let d = td();
+        std::fs::create_dir(d.path().join(".claude")).unwrap();
+        std::fs::write(d.path().join("tsconfig.json"), "{}").unwrap();
+        std::fs::write(d.path().join("package.json"), "{}").unwrap();
+        run_init(&["--yes".into(), "--dir".into(), d.path().display().to_string()]).unwrap();
+
+        let pkg = std::fs::read_to_string(d.path().join("package.json")).unwrap();
+        assert_eq!(
+            dev_dep_version(&pkg, package_json::TYPES_PACKAGE),
+            Some(package_json::TYPES_VERSION.to_string()),
+            "@nubjs/types must be added to devDependencies with the binary version"
+        );
+    }
+
+    #[test]
+    fn dev_dep_written_into_dev_not_runtime_dependencies() {
+        let d = td();
+        std::fs::create_dir(d.path().join(".claude")).unwrap();
+        std::fs::write(d.path().join("tsconfig.json"), "{}").unwrap();
+        std::fs::write(
+            d.path().join("package.json"),
+            r#"{"dependencies":{"express":"4.0.0"}}"#,
+        )
+        .unwrap();
+        run_init(&["--yes".into(), "--dir".into(), d.path().display().to_string()]).unwrap();
+
+        let pkg = std::fs::read_to_string(d.path().join("package.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&pkg).unwrap();
+        // Must be in devDependencies, NOT in runtime dependencies.
+        assert!(
+            v["devDependencies"][package_json::TYPES_PACKAGE].is_string(),
+            "must be in devDependencies"
+        );
+        assert!(
+            v["dependencies"][package_json::TYPES_PACKAGE].is_null(),
+            "must NOT be in runtime dependencies"
+        );
+    }
+
+    #[test]
+    fn dev_dep_is_idempotent_on_rerun() {
+        let d = td();
+        std::fs::create_dir(d.path().join(".claude")).unwrap();
+        std::fs::write(d.path().join("tsconfig.json"), "{}").unwrap();
+        std::fs::write(d.path().join("package.json"), "{}").unwrap();
+        let args = vec![
+            "--yes".to_string(),
+            "--dir".to_string(),
+            d.path().display().to_string(),
+        ];
+        run_init(&args).unwrap();
+        let pkg1 = std::fs::read_to_string(d.path().join("package.json")).unwrap();
+        run_init(&args).unwrap();
+        let pkg2 = std::fs::read_to_string(d.path().join("package.json")).unwrap();
+        assert_eq!(pkg1, pkg2, "package.json re-run must be idempotent");
+        // Exactly one entry for @nubjs/types.
+        assert_eq!(
+            pkg1.matches(package_json::TYPES_PACKAGE).count(),
+            1,
+            "exactly one @nubjs/types entry after a re-run"
+        );
+    }
+
+    #[test]
+    fn dev_dep_preserves_key_order() {
+        // name/version must still precede devDependencies after the merge.
+        let d = td();
+        std::fs::create_dir(d.path().join(".claude")).unwrap();
+        std::fs::write(d.path().join("tsconfig.json"), "{}").unwrap();
+        std::fs::write(
+            d.path().join("package.json"),
+            r#"{"name":"my-app","version":"1.0.0","devDependencies":{"jest":"29.0.0"}}"#,
+        )
+        .unwrap();
+        run_init(&["--yes".into(), "--dir".into(), d.path().display().to_string()]).unwrap();
+
+        let pkg = std::fs::read_to_string(d.path().join("package.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&pkg).unwrap();
+        let keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        let name_pos = keys.iter().position(|k| *k == "name").unwrap();
+        let dev_pos = keys.iter().position(|k| *k == "devDependencies").unwrap();
+        assert!(name_pos < dev_pos, "name must precede devDependencies");
+        // jest still present.
+        assert_eq!(
+            dev_dep_version(&pkg, "jest"),
+            Some("29.0.0".to_string()),
+            "existing devDep must be preserved"
+        );
+    }
+
+    #[test]
+    fn no_package_json_means_no_dev_dep_written() {
+        // When there's no package.json at all the command still succeeds —
+        // the devDep step is gated on has_package_json.
+        let d = td();
+        std::fs::create_dir(d.path().join(".claude")).unwrap();
+        std::fs::write(d.path().join("tsconfig.json"), "{}").unwrap();
+        run_init(&["--yes".into(), "--dir".into(), d.path().display().to_string()]).unwrap();
+        assert!(
+            !d.path().join("package.json").exists(),
+            "no package.json must not be created"
         );
     }
 

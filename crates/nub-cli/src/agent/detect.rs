@@ -52,6 +52,8 @@ pub struct Detection {
     pub has_agents_md: bool,
     /// Whether a `tsconfig.json` exists at the root (gates the types-pickup offer).
     pub has_tsconfig: bool,
+    /// Whether a `package.json` exists at the root (gates the devDep write).
+    pub has_package_json: bool,
 }
 
 impl Detection {
@@ -86,6 +88,7 @@ pub fn detect(dir: &Path) -> Detection {
         agents,
         has_agents_md: dir.join("AGENTS.md").is_file(),
         has_tsconfig: dir.join("tsconfig.json").is_file(),
+        has_package_json: dir.join("package.json").is_file(),
     }
 }
 
@@ -165,5 +168,12 @@ mod tests {
         let d = td();
         fs::write(d.path().join("tsconfig.json"), "{}\n").unwrap();
         assert!(detect(d.path()).has_tsconfig);
+    }
+
+    #[test]
+    fn package_json_presence_is_reported() {
+        let d = td();
+        fs::write(d.path().join("package.json"), "{}\n").unwrap();
+        assert!(detect(d.path()).has_package_json);
     }
 }
