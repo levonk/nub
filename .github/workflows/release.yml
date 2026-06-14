@@ -672,6 +672,24 @@ jobs:
           echo "→ @nubjs/nub@$VERSION"
           (cd npm/nub && npm publish --access public)
 
+      - name: Prepare and publish types package
+        run: |
+          # Package #10: @nubjs/types — the types-only ambient-declarations package
+          # (index.d.ts: data-format import wildcards, Worker, Temporal, reportError,
+          # import.meta.hot). No binary, no platform variants, no build — just set the
+          # version from the tag and publish via the same OIDC trusted-publishing flow.
+          # Decoupled from @nubjs/nub's optionalDependencies on purpose: it's a
+          # standalone devDep users add, not install-time plumbing. Version stays in
+          # lockstep via `make version` + the version-check gate (the verify job).
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('npm/nub-types/package.json', 'utf8'));
+            p.version = '${{ env.VERSION }}';
+            fs.writeFileSync('npm/nub-types/package.json', JSON.stringify(p, null, 2) + '\n');
+          "
+          echo "→ @nubjs/types@$VERSION"
+          (cd npm/nub-types && npm publish --access public)
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

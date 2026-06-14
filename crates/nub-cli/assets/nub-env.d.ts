@@ -54,6 +54,28 @@ declare module "*.txt" {
 // In no Node version, in no @types/node. Nub installs it on every supported version.
 declare function reportError(error: unknown): void;
 
+// ── lib.dom step-aside helpers (idiom from bun-types: packages/bun-types/bun.d.ts) ──
+// These two ambient *type* aliases let us declare DOM-overlapping globals (today
+// just `Worker`) WITHOUT colliding (TS2403/TS2430) when the consumer ALSO has them
+// globally — e.g. `lib: ["dom"]`, or any other lib that declares `Worker`. They
+// are pure type-level helpers: a global *script* may declare ambient `type`s
+// freely (only a top-level `import`/`export` would turn this into a module), so
+// this does NOT break the wildcard `declare module "*.yaml"` decls above.
+//
+// `__NubLibDomIsLoaded` — lib.dom defines the global `onabort`; its presence is the
+// signal that DOM is loaded, so the DOM owns these globals and we must step aside.
+// `__NubUseLibDomIfAvailable<K, T>` — when DOM is loaded, adopt whatever type
+// `globalThis` already has for key K; otherwise fall back to our own shape T. This
+// is exactly Bun's `Bun.__internal.{LibDomIsLoaded,UseLibDomIfAvailable}`, recast
+// as bare ambient globals (with a `__Nub` prefix) so the file stays a script.
+type __NubLibDomIsLoaded = typeof globalThis extends { onabort: any } ? true : false;
+type __NubUseLibDomIfAvailable<GlobalThisKeyName extends PropertyKey, Otherwise> =
+  __NubLibDomIsLoaded extends true
+    ? typeof globalThis extends { [K in GlobalThisKeyName]: infer T }
+      ? T
+      : Otherwise
+    : Otherwise;
+
 // ── Browser-shape Worker global (runtime/worker-polyfill.mjs; wiki/runtime/web-worker.md) ──
 // Nub ships the WHATWG/browser subset of `Worker` over node:worker_threads.Worker.
 // @types/node has NO global `Worker` (only node:worker_threads' class), so this is
@@ -61,22 +83,33 @@ declare function reportError(error: unknown): void;
 // global in @types/node (web-globals/fetch.d.ts + messaging.d.ts) — verified
 // empirically — so they are referenced from there and intentionally NOT redeclared
 // here (redeclaring them collides: TS2403).
+//
+// Step-aside: when `lib: ["dom"]` is in play, the DOM's own `Worker` wins — the
+// interface body resolves to `{}` (via `__NubLibWorkerOrNubWorker`) and our `var`
+// adopts the DOM type (via `__NubUseLibDomIfAvailable`), so the two coexist with
+// NO TS2403/TS2430 collision. When DOM is absent (the normal Node case), our full
+// browser-shape declaration applies unchanged.
 interface WorkerOptions {
   type?: "module" | "classic";
   name?: string;
   credentials?: "omit" | "same-origin" | "include";
 }
-interface Worker extends EventTarget {
+interface __NubWorker extends EventTarget {
   postMessage(message: any, transfer?: readonly (ArrayBuffer | MessagePort)[]): void;
   terminate(): void;
   onmessage: ((this: Worker, ev: MessageEvent) => any) | null;
   onmessageerror: ((this: Worker, ev: MessageEvent) => any) | null;
   onerror: ((this: Worker, ev: ErrorEvent) => any) | null;
 }
-declare var Worker: {
-  prototype: Worker;
-  new (scriptURL: string | URL, options?: WorkerOptions): Worker;
-};
+type __NubLibWorkerOrNubWorker = __NubLibDomIsLoaded extends true ? {} : __NubWorker;
+interface Worker extends __NubLibWorkerOrNubWorker {}
+declare var Worker: __NubUseLibDomIfAvailable<
+  "Worker",
+  {
+    prototype: Worker;
+    new (scriptURL: string | URL, options?: WorkerOptions): Worker;
+  }
+>;
 
 // ── import.meta.hot (Vite-compatible; wiki/runtime/hot-mode.md — v0.x, shape committed v0.1) ──
 // Forward-compat commitment: ships now so framework authors can code against the

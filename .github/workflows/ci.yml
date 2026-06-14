@@ -267,3 +267,24 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  types-fixtures:
+    name: "@nubjs/types typecheck fixtures"
+    runs-on: ubuntu-latest
+    # Catches @nubjs/types declaration regressions: each fixture runs `tsc --noEmit`
+    # and asserts the expected pass/fail. The package's index.d.ts is exercised
+    # directly (installed as file:.. → symlinked), so a broken decl, a lost data-import
+    # wildcard, an accidental module conversion (export {}), or a re-introduced lib.dom
+    # `Worker` collision (TS2403/TS2430) fails here. Pure Node + tsc — no Rust toolchain,
+    # no submodules, no native addon. Pinned tsc + @types/node in npm/nub-types/test.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Install fixture deps (pinned tsc + @types/node + file:.. @nubjs/types)
+        run: npm install --no-audit --no-fund
+        working-directory: npm/nub-types/test
+      - name: Run @nubjs/types typecheck fixtures
+        run: node run.mjs
+        working-directory: npm/nub-types/test

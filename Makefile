@@ -107,6 +107,10 @@ version-check:
 				if (p.version !== v) errors.push(pkg + ' has ' + p.version + ', expected ' + v); \
 			} catch { errors.push('missing or unreadable ' + pkg); } \
 		} \
+		try { \
+			const types = JSON.parse(fs.readFileSync('npm/nub-types/package.json', 'utf8')); \
+			if (types.version !== v) errors.push('npm/nub-types/package.json has ' + types.version + ', expected ' + v); \
+		} catch { errors.push('missing or unreadable npm/nub-types/package.json'); } \
 		const cargo = fs.readFileSync('Cargo.toml', 'utf8'); \
 		const cm = cargo.match(/^version = \x22([^\x22]*)\x22/m); \
 		if (!cm) errors.push('Cargo.toml: workspace version line not found'); \

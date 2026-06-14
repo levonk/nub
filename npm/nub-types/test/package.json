@@ -1,0 +1,14 @@
+{
+  "name": "@nubjs/types-fixtures",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Typecheck fixtures verifying @nubjs/types resolves, steps aside from lib.dom, and stays a global script.",
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "@types/node": "25.9.3",
+    "@nubjs/types": "file:.."
+  },
+  "scripts": {
+    "test": "node run.mjs"
+  }
+}
