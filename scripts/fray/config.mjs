@@ -120,8 +120,13 @@ export function loadConfig(projectDir) {
     }
     inState = false; // any other top-level key closes the state block
 
-    if (key === 'enabled') cfg.enabled = toBool(val, cfg.enabled);
-    else if (key === 'autonomous_mode') cfg.autonomousMode = toBool(val, cfg.autonomousMode);
+    // scalar() FIRST — strip any trailing inline `# …` comment before coercing,
+    // else `autonomous_mode: on  # note` reads as garbage → silently falls back to
+    // the default. (Bug found 2026-06-14: an inline comment flipped autonomous mode
+    // back off. The nested `state:` entries already go through scalar(); the
+    // top-level bools must too.)
+    if (key === 'enabled') cfg.enabled = toBool(scalar(val), cfg.enabled);
+    else if (key === 'autonomous_mode') cfg.autonomousMode = toBool(scalar(val), cfg.autonomousMode);
     // unrecognized top-level keys are ignored by design (forward-compatible)
   }
 
