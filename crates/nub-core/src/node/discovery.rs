@@ -183,6 +183,80 @@ pub fn discover_node(cwd: &Path) -> Result<ResolvedNode, DiscoveryError> {
     }
 }
 
+/// A NON-SPAWNING, NON-NETWORKING, NON-PROVISIONING variant of [`discover_node`]
+/// for latency-critical informational paths — chiefly `nub --version`, which must
+/// be near-instant and must never block, spawn a Node subprocess, hit the network,
+/// or provision. It resolves the SAME pin chain (cheap file reads) but learns a
+/// candidate Node's version only for FREE:
+///
+/// - a PATH node's version comes from the mtime-valid discovery cache only — never
+///   by spawning `node --version` (the multi-second hang `nub --version` exhibited
+///   when the box's `node` startup was slow, e.g. a heavy `NODE_OPTIONS`, a
+///   network-mounted node, or AV scanning);
+/// - a store / nvm node's version comes from its directory name (the name IS the
+///   concrete version), so those resolve with no spawn at all.
+///
+/// Returns `None` whenever the version can't be learned cheaply (PATH node present
+/// but uncached, no node found, discovery would error) — the caller then omits its
+/// informational line rather than paying for resolution. NEVER use this on a run
+/// path: it deliberately under-reports rather than spawn.
+pub fn discover_node_cached(cwd: &Path) -> Option<ResolvedNode> {
+    // Honor the same NODE_EXECUTABLE override surface, but only when its version
+    // is already cached (no spawn).
+    if let Some(raw) = env::var_os("NODE_EXECUTABLE") {
+        if !raw.is_empty() {
+            let path = PathBuf::from(&raw);
+            let version = read_version_cache(&path)?;
+            let utf8_path = Utf8PathBuf::try_from(path).ok()?;
+            return Some(ResolvedNode {
+                path: utf8_path,
+                version,
+                pin_source: Some("NODE_EXECUTABLE".to_string()),
+            });
+        }
+    }
+
+    // resolve_pin_chain can error (RuntimeNotNode); a version query never fails on
+    // that — treat any chain error as "nothing to report".
+    let chain = resolve_pin_chain(cwd).ok()?;
+
+    match chain.pin {
+        None => shell_path_node_cached(None),
+        Some((_, parsed_pin, pin_source)) => {
+            // PATH node, version from cache only — and only if it satisfies the pin.
+            if let Some(node) = shell_path_node_cached(Some(pin_source.clone())) {
+                if node.version.satisfies(&parsed_pin) {
+                    return Some(node);
+                }
+            }
+            // Store / nvm: version is the directory name, free to read.
+            if let Some(mut node) = nub_store_node(&parsed_pin) {
+                node.pin_source = Some(pin_source.clone());
+                return Some(node);
+            }
+            if let Some(mut node) = scan_nvm(&parsed_pin) {
+                node.pin_source = Some(pin_source);
+                return Some(node);
+            }
+            None
+        }
+    }
+}
+
+/// PATH-node resolution whose version comes ONLY from the mtime-valid discovery
+/// cache — never by spawning `node --version`. Returns `None` on a cache miss so
+/// the latency-critical caller stays spawn-free. Companion to [`shell_path_node`].
+fn shell_path_node_cached(pin_source: Option<String>) -> Option<ResolvedNode> {
+    let node_path = which_node().ok()?;
+    let version = read_version_cache(&node_path)?;
+    let utf8_path = Utf8PathBuf::try_from(node_path).ok()?;
+    Some(ResolvedNode {
+        path: utf8_path,
+        version,
+        pin_source,
+    })
+}
+
 /// [`discover_node`], but when a pinned version can't be satisfied from PATH /
 /// nub's store / nvm, DOWNLOAD + install it from nodejs.org (uv-style, silent)
 /// and use it. This is the provisioning fire point — call it ONLY from

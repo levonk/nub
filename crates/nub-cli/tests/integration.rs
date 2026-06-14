@@ -509,13 +509,105 @@ fn version_flag_copies_nodes_format_with_resolved_node_on_stderr() {
             && !stdout.contains("nub"),
         "stdout must be bare v<semver>: {stdout:?}"
     );
-    // The resolved Node is informative stderr, never stdout (best-effort; on a
-    // box with a PATH node it must appear with its provenance).
+    // The resolved Node is best-effort STDERR, never stdout. It now resolves
+    // spawn-free (cache / store-dir-name only), so a COLD discovery cache may
+    // legitimately omit it — assert only the shape WHEN present, and that the
+    // brand-correct prefix is on stderr, never stdout.
+    if stderr.contains("» node v") {
+        assert!(
+            stderr.contains("from PATH") || stderr.contains("resolved from"),
+            "resolved-node line must carry provenance: {stderr:?}"
+        );
+    }
     assert!(
-        stderr.contains("node v"),
-        "resolved node belongs on stderr: {stderr:?}"
+        !stdout.contains("node v"),
+        "resolved node belongs on stderr, never stdout: {stdout:?}"
     );
     assert_eq!(output.status.code(), Some(0));
+}
+
+/// REGRESSION (the maintainer, 2026-06-13): `nub --version` hung for SECONDS when the
+/// box's `node` startup was slow, because it spawned `node --version` purely to
+/// print the courtesy resolved-Node stderr line. A version query must be
+/// near-instant and must NEVER spawn Node / network / provision.
+///
+/// Proof by SENTINEL, not timing (timing is flaky under parallel test load): a
+/// fake `node` that writes a marker file on EVERY invocation sits on PATH as the
+/// only reachable node, with a pin it satisfies. The discovery cache is
+/// PRE-WARMED with that node's version. After `nub --version`, the marker must
+/// NOT exist — direct proof the binary was never run — and the cached version
+/// must appear on stderr (resolved for free). (Unix only — the shim is `#!/bin/sh`.)
+#[cfg(unix)]
+#[test]
+fn version_flag_never_spawns_node_even_when_node_is_slow() {
+    use std::time::UNIX_EPOCH;
+
+    let tmp = unique_test_cache();
+    let proj = tmp.join("proj");
+    let bin = tmp.join("bin");
+    let cache = tmp.join("cache");
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(cache.join("nub")).unwrap();
+
+    // A `node` that records every invocation, then sleeps — the slow-startup box,
+    // distilled. The marker file is the spawn detector; the sleep makes a stray
+    // spawn unmissable in CI wall-time even if the marker check ever regressed.
+    let marker = tmp.join("node-was-spawned");
+    let fake_node = bin.join("node");
+    std::fs::write(
+        &fake_node,
+        format!(
+            "#!/bin/sh\ntouch '{}'\nsleep 3\necho v22.16.0\n",
+            marker.to_string_lossy()
+        ),
+    )
+    .unwrap();
+    let mut perms = std::fs::metadata(&fake_node).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    std::fs::set_permissions(&fake_node, perms).unwrap();
+
+    // A pin the fake node satisfies, so discovery would pick it.
+    std::fs::write(proj.join("package.json"), r#"{"engines":{"node":">=22.0.0"}}"#).unwrap();
+
+    // PRE-WARM the discovery cache for the fake node (path + current mtime), so a
+    // spawn-free `--version` can report its version without ever running it.
+    let mtime = std::fs::metadata(&fake_node)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let cache_json = format!(
+        r#"{{"{}":{{"version":"22.16.0","mtime":{mtime}}}}}"#,
+        fake_node.to_string_lossy()
+    );
+    std::fs::write(cache.join("nub").join("node-discovery.json"), cache_json).unwrap();
+
+    let output = Command::new(nub_binary())
+        .arg("--version")
+        .current_dir(&proj)
+        .env("PATH", &bin) // ONLY the fake node is reachable
+        .env("XDG_CACHE_HOME", &cache)
+        .env_remove("NODE_EXECUTABLE")
+        .output()
+        .expect("failed to spawn nub");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
+    // The whole point: `node` was NEVER executed for a version query.
+    assert!(
+        !marker.exists(),
+        "`nub --version` must not spawn node, but the node shim ran: {stderr:?}"
+    );
+    // It still reports the resolved Node — read for free from the warm cache.
+    assert!(
+        stderr.contains("» node v22.16.0"),
+        "warm cache should report node v22.16.0 spawn-free: {stderr:?}"
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]
