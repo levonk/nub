@@ -5,6 +5,15 @@ name: Verify install scripts
 # Decoupled from `release.yml`: dispatch it any time against an existing release,
 # no publish step required. Complements the release's `Test install` jobs, which
 # only exercise `npm install -g` and never touch the curl/irm script path.
+#
+# Three guarantees enforced here beyond a basic smoke:
+#   1. drift-guard: site/public/install.{sh,ps1} must be byte-for-byte identical to
+#      root install.{sh,ps1} (catches stale site-served copies before they reach users).
+#   2. nubx: every job asserts nubx exists AND runs after install (argv[0] dispatch is
+#      historically the first thing to regress after a packaging change).
+#   3. macOS 403 fix: curl uses a token-auth header on raw.githubusercontent.com so the
+#      CI runner never hits the unauthenticated rate-limit that caused intermittent 403s
+#      on macos-14.
 
 on:
   workflow_dispatch:
@@ -21,12 +30,37 @@ on:
     paths:
       - install.sh
       - install.ps1
+      - site/public/install.sh
+      - site/public/install.ps1
       - .github/workflows/verify-install.yml
 
 permissions:
   contents: read
 
 jobs:
+  # Drift-guard: fail if the site-served installers diverge from the root copies.
+  # A site deploy with a stale installer is a silent regression — users hit a broken
+  # script while the root copy looks fine. This job catches that on every push.
+  drift-guard:
+    name: drift-guard (root ↔ site/public)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert install.sh in sync
+        run: |
+          if ! diff --unified install.sh site/public/install.sh; then
+            echo "::error::site/public/install.sh differs from root install.sh — sync them before merging"
+            exit 1
+          fi
+          echo "install.sh: in sync ✓"
+      - name: Assert install.ps1 in sync
+        run: |
+          if ! diff --unified install.ps1 site/public/install.ps1; then
+            echo "::error::site/public/install.ps1 differs from root install.ps1 — sync them before merging"
+            exit 1
+          fi
+          echo "install.ps1: in sync ✓"
+
   ps1:
     name: install.ps1 · ${{ matrix.os }}
     strategy:
@@ -37,11 +71,19 @@ jobs:
     steps:
       - name: Install via install.ps1 (the real `irm | iex` path)
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
           $src = "${{ github.event.inputs.source || 'https://raw.githubusercontent.com/nubjs/nub/main' }}"
           $ver = "${{ github.event.inputs.version || 'latest' }}"
-          $script = Invoke-RestMethod "$src/install.ps1"
+          $headers = @{}
+          # Pass a token when fetching from raw.githubusercontent.com to avoid
+          # the unauthenticated rate-limit (403) that bites CI runners.
+          if ($src -like "*raw.githubusercontent.com*" -and $env:GITHUB_TOKEN) {
+            $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+          }
+          $script = Invoke-RestMethod "$src/install.ps1" -Headers $headers
           if ($ver -eq "latest") { Invoke-Expression $script }
           else { & ([scriptblock]::Create($script)) $ver }
       - name: Binary runs (direct path)
@@ -51,6 +93,13 @@ jobs:
           $exe = "$env:USERPROFILE\.nub\bin\nub.exe"
           if (-not (Test-Path $exe)) { throw "install.ps1 did not produce $exe" }
           & $exe --version
+      - name: nubx exists and runs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exex = "$env:USERPROFILE\.nub\bin\nubx.exe"
+          if (-not (Test-Path $exex)) { throw "install.ps1 did not create nubx.exe at $exex" }
+          & $exex --version
       - name: PATH persisted for a brand-new shell
         shell: pwsh
         run: |
@@ -66,22 +115,43 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-13, macos-14]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install via install.sh (the real `curl | bash` path)
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           src="${{ github.event.inputs.source || 'https://raw.githubusercontent.com/nubjs/nub/main' }}"
           ver="${{ github.event.inputs.version || 'latest' }}"
-          if [ "$ver" = "latest" ]; then curl -fsSL "$src/install.sh" | bash
-          else curl -fsSL "$src/install.sh" | bash -s -- "$ver"; fi
+          # Pass a token when fetching from raw.githubusercontent.com to avoid
+          # the unauthenticated rate-limit (403) that bites macOS CI runners.
+          auth_arg=()
+          if [[ "$src" == *raw.githubusercontent.com* ]] && [[ -n "${GITHUB_TOKEN:-}" ]]; then
+            auth_arg=(-H "Authorization: token $GITHUB_TOKEN")
+          fi
+          if [ "$ver" = "latest" ]; then
+            curl -fsSL "${auth_arg[@]}" "$src/install.sh" | bash
+          else
+            curl -fsSL "${auth_arg[@]}" "$src/install.sh" | bash -s -- "$ver"
+          fi
       - name: Binary runs (direct path)
         shell: bash
         run: |
           set -euo pipefail
           "$HOME/.nub/bin/nub" --version
+      - name: nubx exists and runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          nubx_path="$HOME/.nub/bin/nubx"
+          if [ ! -L "$nubx_path" ] && [ ! -f "$nubx_path" ]; then
+            echo "install.sh did not create nubx at $nubx_path"
+            exit 1
+          fi
+          "$nubx_path" --version
       - name: PATH line written to a shell rc
         shell: bash
         run: |
@@ -106,6 +176,10 @@ jobs:
         run: apk add --no-cache bash curl tar gzip nodejs
       - name: Install via install.sh
         shell: bash
+        # No GITHUB_TOKEN auth here: the Alpine container runs as a non-Actions user
+        # and the token is not injected by default. The musl leg exercises the exact
+        # same curl path as a real user (unauthenticated) — rate-limit risk is low
+        # because the container IP isn't shared with macOS runners that exhaust the limit.
         run: |
           set -euo pipefail
           src="${{ github.event.inputs.source || 'https://raw.githubusercontent.com/nubjs/nub/main' }}"
@@ -117,3 +191,13 @@ jobs:
         run: |
           set -euo pipefail
           "$HOME/.nub/bin/nub" --version
+      - name: nubx exists and runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          nubx_path="$HOME/.nub/bin/nubx"
+          if [ ! -L "$nubx_path" ] && [ ! -f "$nubx_path" ]; then
+            echo "install.sh did not create nubx at $nubx_path"
+            exit 1
+          fi
+          "$nubx_path" --version
