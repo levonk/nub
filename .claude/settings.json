@@ -26,11 +26,38 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-seed.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-seed.mjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-seed.mjs\""
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact-reground.mjs\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-seed.mjs\""
           }
         ]
       }
