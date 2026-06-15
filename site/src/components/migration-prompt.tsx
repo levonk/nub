@@ -8,17 +8,17 @@ import { useState } from 'react';
    education pass before any opt-in migration. DRAFT wording — the maintainer owns the
    final voice. */
 const PROMPT = [
-  'Adopt nub (https://nubjs.com) in this Node.js project by working through these steps:',
+  'Adopt Nub (https://nubjs.com) in this Node.js project by working through these steps:',
   '',
-  '1. Read https://nubjs.com/start.md to learn nub’s full surface.',
+  '1. Read https://nubjs.com/start.md to learn Nub’s full surface. Read the helptext (`-h`) for specific commands as needed. The full docs are at https://nubjs.com/llms.txt.',
   '',
-  '2. Install the nub skill. Run `nub agent skill` to print the skill body (it only prints it — it does not install anything), or fetch https://nubjs.com/skill.md. Then write it into every skills or rules location this project uses — for example .claude/skills/ for Claude Code and .cursor/rules/ for Cursor — covering all of them, not just one. Installing the skill is the only step to take unprompted; everything after it is opt-in, so pause for approval before making any change.',
+  '2. Install the Nub skill. Run `nub agent skill` to print the skill body (it only prints it — it does not install anything), or fetch https://nubjs.com/skill.md. Then write it into every skills or rules location this project uses — for example .claude/skills/ for Claude Code and .cursor/rules/ for Cursor — covering all of them, not just one. Installing the skill is the only step to take unprompted; everything after it is opt-in, so pause for approval before making any change.',
   '',
-  '3. Explain how nub fits in. In an education pass with no edits, study this project’s existing tooling — its dependencies, scripts, TypeScript runner, env loading, and version and package managers — then lay out, above all, how nub fits into it and simplifies it: which tools it consolidates or replaces here, what it removes from the setup, and how and when to use it (`nub <file>` to run files, `nub run` for package.json scripts, `nubx` for local CLIs, and `nub --node` for plain Node).',
+  '3. Investigate the current project. Concisely explain how Nub would simplify the project’s dev dependencies and improve developer experience. Highlight any dev dependencies that Nub makes redundant (for example tsx, ts-node, dotenv, nodemon, or tsconfig-paths). In an education pass with no edits, study this project’s existing tooling — its dependencies, scripts, TypeScript runner, env loading, and version and package managers — then lay out, above all, how Nub fits into it and simplifies it: which tools it consolidates or replaces here, what it removes from the setup, and how and when to use it (`nub <file>` to run files, `nub run` for package.json scripts, `nubx` for local CLIs, and `nub --node` for plain Node).',
   '',
-  '4. Offer to migrate. Point out the dependencies or devDependencies nub makes redundant (for example tsx, ts-node, dotenv, nodemon, or tsconfig-paths) and offer to migrate off them — but make no change without explicit approval.',
+  '4. Offer to migrate off of the dependencies or devDependencies Nub makes redundant (for example tsx, ts-node, dotenv, nodemon, or tsconfig-paths) and offer to migrate off them — but make no change without explicit approval.',
   '',
-  'There’s no need to switch off the existing package manager: nub respects its lockfile bidirectionally, so nub and the current package manager work interchangeably.',
+  'There’s no need to switch off the existing package manager: Nub respects its lockfile bidirectionally, so Nub and the current package manager work interchangeably.',
 ].join('\n');
 
 export function MigrationPrompt({ className = '' }: { className?: string }) {
