@@ -146,6 +146,17 @@ h1, h2, h3, h4, .font-display {
   font-weight: 500;
 }
 
+/* Shiki comment tokens fail WCAG AA against the dark code window: the homepage
+   `vesper` theme emits `#8B8B8B94` (2.65:1 over #0b0a08) and the docs default
+   theme emits `#6A737D` (3.82:1 over #16140f). Both arrive as inline `color`
+   styles on token spans, so lift them to a warm muted that clears AA (≈5.4:1)
+   without losing the dimmed "this is a comment" read. */
+pre span[style*='#8B8B8B94'],
+pre span[style*='#6A737D'],
+pre span[style*='#6a737d'] {
+  color: #8f8a80 !important;
+}
+
 /* Inline mono reads visually larger than the serif around it (mono x-height
    runs high + wide). Pull it down and tighten it so it sits with the prose. */
 :not(pre) > code {

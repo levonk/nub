@@ -4,7 +4,14 @@ import { blog } from '@/lib/source';
 
 export const metadata: Metadata = {
   title: 'Blog',
-  description: 'Writing on Nub — the toolkit for Node.js.',
+  description: 'Writing on Nub — the all-in-one toolkit for Node.js. Notes on the thesis, the toolchain, and what ships next.',
+  alternates: { canonical: '/blog' },
+  openGraph: {
+    type: 'website',
+    url: '/blog',
+    title: 'Blog',
+    description: 'Writing on Nub — the all-in-one toolkit for Node.js.',
+  },
 };
 
 export default function BlogIndex() {

@@ -32,8 +32,43 @@ const plexMono = IBM_Plex_Mono({
 
 const TITLE = 'Nub — an all-in-one toolkit for Node.js';
 const DESCRIPTION =
-  'Nub is a Rust CLI that augments the Node you already have: TypeScript-first execution, a faster script runner, and a fast bin runner. Zero lock-in.';
+  'Nub is a TypeScript-first toolkit for Node.js: run TypeScript files on stock Node, a faster npm run, a pnpm-compatible package manager, and a built-in Node version manager. No lock-in.';
 const SITE_URL = 'https://nubjs.com';
+
+// Structured data: a SoftwareApplication (the CLI) plus the publishing
+// Organization and the WebSite, so search engines can render a rich result and
+// associate the docs/blog with the project. Emitted once, in the root layout.
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${SITE_URL}/#software`,
+      name: 'Nub',
+      description: DESCRIPTION,
+      url: SITE_URL,
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'macOS, Linux, Windows',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      softwareRequirements: 'Node.js',
+      author: { '@id': `${SITE_URL}/#org` },
+    },
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#org`,
+      name: 'Nub',
+      url: SITE_URL,
+      sameAs: ['https://github.com/nubjs/nub'],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      name: 'Nub',
+      url: SITE_URL,
+      publisher: { '@id': `${SITE_URL}/#org` },
+    },
+  ],
+};
 
 export const metadata: Metadata = {
   title: {
@@ -89,6 +124,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col antialiased">
+        <script
+          type="application/ld+json"
+          // Static, build-time JSON from a trusted local constant — safe to inline.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+        />
         <RootProvider
           theme={{ defaultTheme: 'dark', enableSystem: false }}
         >

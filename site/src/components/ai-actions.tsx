@@ -139,7 +139,6 @@ function CopyMarkdownButton({ markdownUrl }: { markdownUrl: string }) {
       disabled={loading}
       onClick={onClick}
       className={`group ${pill}`}
-      aria-label="Copy this page as Markdown"
     >
       <span className="inline-flex w-4 justify-center text-fd-muted-foreground transition group-hover:text-ember">
         {checked ? <CheckIcon /> : <CopyIcon />}

@@ -1,0 +1,230 @@
+/* ----------------------------------------------------------------------------
+   Shared Open Graph / Twitter-card renderer.
+
+   Builds 1200×630 social cards that look like they were lifted off the
+   homepage: the `#100f0d` ink ground, a top ember glow, the Newsreader display
+   serif (with the italic "augments" accent), an IBM Plex Mono eyebrow, and the
+   `nub.` wordmark with the ember full-stop.
+
+   `next/og` rasterizes a React tree with Satori, which cannot read CSS
+   `next/font` faces — it needs raw font buffers. We ship the exact Newsreader
+   and IBM Plex Mono weights the site uses under `src/lib/og-fonts/` and load
+   them at module scope (cached across renders). Everything here is pure
+   layout + inline styles, the only shape Satori supports.
+---------------------------------------------------------------------------- */
+import { ImageResponse } from 'next/og';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ReactElement } from 'react';
+
+export const OG_SIZE = { width: 1200, height: 630 };
+export const OG_CONTENT_TYPE = 'image/png';
+
+/* Homepage palette (global.css). Kept literal so Satori — which has no access
+   to CSS custom properties — renders the same ink/ember the site does. */
+const INK = '#100f0d';
+const FOREGROUND = '#ece6d8';
+const MUTED = '#aba297';
+const EMBER = '#ff5d3b';
+const BORDER = '#2a2620';
+
+const FONT_DIR = join(process.cwd(), 'src', 'lib', 'og-fonts');
+const font = (file: string) => readFileSync(join(FONT_DIR, file));
+
+/* Loaded once per server process, reused for every card. */
+const fonts = [
+  { name: 'Newsreader', data: font('newsreader-regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'Newsreader', data: font('newsreader-medium.ttf'), weight: 500 as const, style: 'normal' as const },
+  { name: 'Newsreader', data: font('newsreader-italic.ttf'), weight: 400 as const, style: 'italic' as const },
+  { name: 'IBM Plex Mono', data: font('plexmono-regular.ttf'), weight: 400 as const, style: 'normal' as const },
+  { name: 'IBM Plex Mono', data: font('plexmono-medium.ttf'), weight: 500 as const, style: 'normal' as const },
+];
+
+/* The `nub.` wordmark — Newsreader display serif, ember full-stop. Matches the
+   footer treatment on the homepage. */
+function Wordmark({ size }: { size: number }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        fontFamily: 'Newsreader',
+        fontWeight: 500,
+        fontSize: size,
+        letterSpacing: '-0.015em',
+        color: FOREGROUND,
+        lineHeight: 1,
+      }}
+    >
+      nub<span style={{ color: EMBER }}>.</span>
+    </div>
+  );
+}
+
+type CardProps = {
+  /* Mono uppercase eyebrow, e.g. "DOCUMENTATION" or a command like "nub run". */
+  eyebrow: string;
+  /* Headline — the page title, or the homepage tagline. */
+  title: ReactElement | string;
+  /* Optional supporting line under the title (muted). */
+  subtitle?: string;
+};
+
+/* The card body, shared by the home and per-page cards. The ember glow, ink
+   ground, eyebrow, serif headline, optional subtitle, and footer wordmark are
+   all positioned with the absolute-size geometry Satori needs. */
+function Card({ eyebrow, title, subtitle }: CardProps) {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        position: 'relative',
+        backgroundColor: INK,
+        padding: '80px',
+        fontFamily: 'Newsreader',
+      }}
+    >
+      {/* Top ember glow — mirrors the hero's radial-gradient wash. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '-340px',
+          left: '50%',
+          marginLeft: '-440px',
+          width: '880px',
+          height: '660px',
+          borderRadius: '9999px',
+          background:
+            'radial-gradient(closest-side, rgba(255,93,59,0.28), rgba(255,93,59,0.06) 60%, transparent 75%)',
+        }}
+      />
+      {/* Hairline frame, set in from the bleed — gives the card an editorial
+          border without competing with the headline. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: '28px',
+          border: `1px solid ${BORDER}`,
+          borderRadius: '20px',
+        }}
+      />
+
+      {/* Eyebrow: mono, uppercase, tracked — the `.eyebrow` treatment. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          fontFamily: 'IBM Plex Mono',
+          fontWeight: 500,
+          fontSize: '24px',
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: EMBER,
+          position: 'relative',
+        }}
+      >
+        {eyebrow}
+      </div>
+
+      {/* Headline + subtitle block, vertically centered in the remaining space. */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flexGrow: 1,
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            fontFamily: 'Newsreader',
+            fontWeight: 500,
+            fontSize: typeof title === 'string' && title.length > 28 ? '80px' : '96px',
+            lineHeight: 1.04,
+            letterSpacing: '-0.02em',
+            color: FOREGROUND,
+            maxWidth: '1000px',
+          }}
+        >
+          {title}
+        </div>
+        {subtitle ? (
+          <div
+            style={{
+              display: 'flex',
+              marginTop: '32px',
+              fontFamily: 'Newsreader',
+              fontWeight: 400,
+              fontSize: '30px',
+              lineHeight: 1.4,
+              color: MUTED,
+              maxWidth: '880px',
+            }}
+          >
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Footer: wordmark left, domain right. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'relative',
+        }}
+      >
+        <Wordmark size={40} />
+        <div
+          style={{
+            display: 'flex',
+            fontFamily: 'IBM Plex Mono',
+            fontWeight: 400,
+            fontSize: '22px',
+            letterSpacing: '0.04em',
+            color: MUTED,
+          }}
+        >
+          nubjs.com
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Render a card to a PNG ImageResponse. */
+export function renderOgImage(props: CardProps) {
+  return new ImageResponse(<Card {...props} />, { ...OG_SIZE, fonts });
+}
+
+/* The homepage card: the hero tagline, "augments" set in ember italic to match
+   the H1. No subtitle — the tagline carries it. */
+export function renderHomeOgImage() {
+  return renderOgImage({
+    eyebrow: 'An all-in-one toolkit for Node.js',
+    title: (
+      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+        <span style={{ display: 'flex' }}>The toolkit that&nbsp;</span>
+        <span style={{ display: 'flex', fontStyle: 'italic', color: EMBER }}>augments</span>
+        <span style={{ display: 'flex' }}>&nbsp;Node.js</span>
+      </div>
+    ),
+  });
+}
+
+/* Clamp a description to a card-friendly length without cutting mid-word. */
+export function clampSubtitle(text: string | undefined, max = 120): string | undefined {
+  if (!text) return undefined;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= max) return normalized;
+  const cut = normalized.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}

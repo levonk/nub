@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { InlineTOC } from 'fumadocs-ui/components/inline-toc';
 import { blog } from '@/lib/source';
@@ -59,13 +60,25 @@ export function generateStaticParams() {
 
 export async function generateMetadata(props: {
   params: Promise<{ slug: string }>;
-}) {
+}): Promise<Metadata> {
   const { slug } = await props.params;
   const page = blog.getPage([slug]);
   if (!page) notFound();
+
+  const { title, description, date, author } = page.data;
+
   return {
-    title: page.data.title,
-    description: page.data.description,
+    title,
+    description,
+    alternates: { canonical: page.url },
+    openGraph: {
+      type: 'article',
+      url: page.url,
+      title,
+      description,
+      publishedTime: date ? new Date(date).toISOString() : undefined,
+      authors: author ? [author] : undefined,
+    },
   };
 }
 

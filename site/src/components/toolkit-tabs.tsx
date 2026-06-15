@@ -226,8 +226,14 @@ export function ToolkitTabs({ node }: { node: NodeVersion }) {
               aria-label={`Show ${p.label}`}
               aria-current={i === active}
               onClick={() => setActive(i)}
-              className={`h-2 w-2 rounded-full ${i === active ? TAB[p.accent].dot : 'bg-fd-border hover:bg-fd-muted-foreground'}`}
-            />
+              // 24×24 hit area (WCAG 2.5.8) with an 8px visual dot centered inside.
+              className="group grid h-6 w-6 place-items-center rounded-full"
+            >
+              <span
+                aria-hidden
+                className={`block h-2 w-2 rounded-full ${i === active ? TAB[p.accent].dot : 'bg-fd-border group-hover:bg-fd-muted-foreground'}`}
+              />
+            </button>
           ))}
         </div>
         <button

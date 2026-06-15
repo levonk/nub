@@ -534,7 +534,7 @@ import { host, port } from "./config.yaml" // named exports`}
                   href="https://github.com/nubjs/nub/tree/main/benchmarks"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground/60 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground/90"
+                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
                 >
                   View bench →
                 </a>
@@ -712,7 +712,7 @@ function RunScriptBand() {
                   href="https://github.com/nubjs/nub/tree/main/benchmarks"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground/60 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground/90"
+                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
                 >
                   View bench →
                 </a>
@@ -802,7 +802,7 @@ function NubxBand() {
                   href="https://github.com/nubjs/nub/tree/main/benchmarks"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground/60 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground/90"
+                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
                 >
                   View bench →
                 </a>
@@ -907,7 +907,7 @@ function Compatibility() {
             href="https://github.com/nubjs/nub/tree/main/tests/cross-runtime"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-fd-muted-foreground/70 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground"
+            className="text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
           >
             View benchmark repo
           </a>
@@ -1122,7 +1122,7 @@ catalog:
                   href="https://github.com/nubjs/nub/tree/main/tests/bench"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground/60 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground/90"
+                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
                 >
                   View bench →
                 </a>

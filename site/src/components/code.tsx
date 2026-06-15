@@ -129,7 +129,7 @@ export function Bench({
               href={source}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-fd-muted-foreground/70 underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:text-fd-muted-foreground"
+              className="text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
             >
               View benchmark →
             </a>
