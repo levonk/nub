@@ -24,7 +24,7 @@ Nub resolves the dependency graph from `yarn.lock` (both Classic and Berry forma
 
 Top-level `resolutions` in `package.json` is honored — Nub applies it the way Yarn does. So is the `packageManager` field, which is what tells Nub the project is a Yarn project.
 
-## `yarn.lock` is read-only
+## `yarn.lock`
 
 Any command that would change `yarn.lock` is refused with a message pointing you back to Yarn (captured against nub 0.0.44, `nub add lodash` in a Yarn project — the verb, reason, and remedy are interpolated):
 
@@ -74,7 +74,7 @@ Imported 2 packages from yarn.lock to pnpm-lock.yaml
 The `nub pm use yarn` command is the [meta-manager](/docs/pm) provisioning command, and it *does* work: it fetches and pins Yarn via the `packageManager` field. It does not produce a `yarn.lock` or convert your install engine; it just provisions the Yarn binary.
 </Callout>
 
-## Yarn config files are not read
+## Config files
 
 This is the headline gap. Nub reads **`.npmrc` only** for registry, auth, scopes, CA, and proxy settings. It does not read Yarn's config files at all:
 
@@ -97,7 +97,7 @@ httpProxy: http://proxy:8080                     # ignored
 
 If your private-registry auth or custom registry lives in `.yarnrc.yml` (which for Berry is the *only* place it lives), Nub will not pick it up and private installs fail with 401/403. The workaround today is to put the equivalent settings in `.npmrc`, which Nub does read.
 
-## PnP and pnpm node-linkers are not produced
+## Node linkers
 
 Nub-the-package-manager only produces a **hoisted `node_modules`** for a Yarn project. Because Nub does not read `.yarnrc.yml` at all, a `nodeLinker` setting there is never seen — and Nub's default layout for a Yarn-incumbent project is hoisted regardless:
 

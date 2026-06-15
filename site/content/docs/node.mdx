@@ -7,7 +7,7 @@ Nub runs your code on stock Node and provisions the right version for you. Pin a
 
 The whole group is optional — `nub <file>` behavior never changes whether you use it or not.
 
-## Versions install themselves
+## Automatic provisioning
 
 Drop a `.node-version` or `.nvmrc` in your project (or an `engines.node` range in `package.json`) and run `nub`. If that Node is already on your machine it's used as-is; if not, Nub downloads the matching stock build from nodejs.org — SHA-256 verified and cached under `~/.cache/nub/node` — then runs your code in the same breath.
 
@@ -110,7 +110,7 @@ nub node which       # prints the exact Node binary Nub will spawn here
 
 The quickest way to answer "which Node runs here, and where is it?" is `nub node which` — it prints the resolved binary path to stdout (so `NODE=$(nub node which)` captures just the path), with a `» resolved from <source>` explainer on stderr, whether the version came from a pin, the cache, or your `PATH`. Bare `nub node` reports the same as a status block.
 
-## A deliberately small surface
+## Scope
 
 Five verbs — `which`, `install`, `ls`, `uninstall`, and `pin` — are the whole group (plus bare `nub node` for a status readout). There's deliberately no `ls-remote`, no `prune`, `--force`, custom aliases, or a global-default command — the automatic provisioning covers the common path, and the small surface keeps "you don't have to think about Node versions" true.
 

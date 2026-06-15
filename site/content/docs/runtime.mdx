@@ -259,7 +259,7 @@ The `sessionStorage` global (in-memory, per-process) works out of the box; `loca
 
 Nub doesn't ship a Node runtime — it runs your code on stock Node. It resolves which Node to use from your project, and will fetch one for you if it's missing. To drive the cache by hand — pre-install a version, list what's cached, remove one, or write a pin — see [Managing Node versions](/docs/node).
 
-### Pin a version, and Nub fetches it
+### Pinning a version
 
 Pin a version in `.node-version` or `.nvmrc`. If that Node is already on your machine (on `PATH` or previously fetched), Nub uses it; if not, it downloads the matching stock build straight from nodejs.org — SHA-256 verified, cached under `~/.cache/nub/node`, and run in the same breath. No `nvm use`, no prompt.
 
