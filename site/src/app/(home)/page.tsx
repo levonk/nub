@@ -145,10 +145,10 @@ function Feature({
 
 const heroLines = (major: string) => [
   { cmd: 'nub index.ts', comment: 'TypeScript-first Node.js runtime' },
-  { cmd: 'nub run dev', comment: '25× faster pnpm run' },
+  { cmd: 'nub run dev', comment: '24× faster pnpm run' },
   { cmd: 'nub watch src/server.ts', comment: 'native watch mode' },
-  { cmd: 'nubx prisma generate', comment: '20× faster npx' },
-  { cmd: 'nub install', comment: '10× faster pnpm install' },
+  { cmd: 'nubx prisma generate', comment: '19× faster npx' },
+  { cmd: 'nub install', comment: '9× faster pnpm install' },
   { cmd: 'nub pm shim', comment: 'built-in Corepack-style shims' },
   { cmd: `nub node install ${major}`, comment: 'Node version manager' },
 ];
@@ -508,13 +508,14 @@ import { host, port } from "./config.yaml" // named exports`}
           <Feature
             accent="ember"
             eyebrow="Performance"
-            title="No overhead over plain Node"
+            title="Negligible overhead over plain Node"
             body={
               <>
-                Nub transpiles each file through its native Rust addon, not a separate
-                process, so running a <Mono>.ts</Mono>{' '}file adds negligible overhead over plain{' '}
-                <Mono>node</Mono>{' '}— and runs about 2.9× faster than <Mono>tsx</Mono>, which
-                boots a second Node to compile.
+                Nub transpiles each file in memory through its native Rust addon, then runs it on
+                the real <Mono>node</Mono>{' '}binary. Its own startup is a few milliseconds of Rust,
+                dwarfed by Node&rsquo;s, so a <Mono>.ts</Mono>{' '}file starts up on par with plain{' '}
+                <Mono>node</Mono>{' '}and about 2.9× faster than <Mono>tsx</Mono>, which loads esbuild
+                and its loader hooks on every run.
               </>
             }
             visual={
@@ -669,7 +670,7 @@ function RunScriptBand() {
       <Container className="py-32 md:py-[180px]">
         <BandHeader
           command="nub run"
-          title={<>A 25× faster <HeadingCode>pnpm run</HeadingCode></>}
+          title={<>A 24× faster <HeadingCode>pnpm run</HeadingCode></>}
           subhead={
             <>
               A drop-in for <Mono>npm run</Mono>{' '}and <Mono>pnpm run</Mono>{' '}with lifecycle
@@ -709,7 +710,7 @@ function RunScriptBand() {
                   rows={[
                     { cmd: 'nub run', ms: 14, us: true },
                     { cmd: 'npm run', ms: 320, ratio: 22 },
-                    { cmd: 'pnpm run', ms: 356, ratio: 25 },
+                    { cmd: 'pnpm run', ms: 356, ratio: 24 },
                   ]}
                 />
                 <a
@@ -761,7 +762,7 @@ function NubxBand() {
       <Container className="py-32 md:py-[180px]">
         <BandHeader
           command="nubx"
-          title={<>A 20× faster <HeadingCode>npx</HeadingCode></>}
+          title={<>A 19× faster <HeadingCode>npx</HeadingCode></>}
           subhead={
             <>
               The <Mono>nubx</Mono>{' '}command resolves <Mono>node_modules/.bin</Mono>{' '}in Rust
@@ -799,7 +800,7 @@ function NubxBand() {
                   rows={[
                     { cmd: 'nubx esbuild --version', ms: 11, us: true },
                     { cmd: 'pnpm exec esbuild --version', ms: 191, ratio: 17 },
-                    { cmd: 'npx esbuild --version', ms: 226, ratio: 20 },
+                    { cmd: 'npx esbuild --version', ms: 226, ratio: 19 },
                   ]}
                 />
                 <a
@@ -1041,7 +1042,7 @@ function HypermanagerBand() {
           command="nub install"
           title={
             <>
-              A <span className="text-pink">10×</span> faster pnpm
+              A <span className="text-pink">9×</span> faster pnpm
             </>
           }
           subhead={
@@ -1119,7 +1120,7 @@ catalog:
           <Feature
             accent="pink"
             eyebrow="Install speed"
-            title="10× faster warm installs"
+            title="9× faster warm installs"
             body={
               <>
                 On every install, pnpm rebuilds a per-project <Mono>node_modules</Mono>,
@@ -1144,7 +1145,7 @@ catalog:
                   rows={[
                     { cmd: 'nub install', ms: 194, us: true },
                     { cmd: 'bun install', ms: 697 },
-                    { cmd: 'pnpm install', ms: 1938, ratio: 10 },
+                    { cmd: 'pnpm install', ms: 1938, ratio: 9 },
                   ]}
                 />
                 <a
