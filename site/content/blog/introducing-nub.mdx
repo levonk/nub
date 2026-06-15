@@ -20,7 +20,7 @@ $ nub node install 26      # manage Node.js versions
 
 ## Why?
 
-Node is the gold standard for server-side JavaScript. It defines the stdlib the whole ecosystem is built on and sets the bar for stability and trust. That reputation comes from strict compatibility guarantees and careful governance — the same caution that means Node can't chase modern DX. So the day-to-day toolchain grew up around it, one tool at a time:
+Node is the gold standard for server-side JavaScript. It defines the stdlib the whole ecosystem is built on and sets the bar for stability and trust. That reputation comes from strict compatibility guarantees and careful governance, which also means Node ships new DX features slowly. So the day-to-day toolchain accumulated around it, one tool at a time:
 
 - **`node`** — runs files. Recently added limited TypeScript support.
 - **`npm run`** (or `pnpm run`, `yarn run`) — the "script runner." Node leaves package management to userland, so third-party package managers became the frontend for almost everything you do in a Node project.
@@ -165,7 +165,7 @@ import prompt from "./prompt.txt"    // string
 import { host, port } from "./config.yaml" // named exports
 ```
 
-### `.env` loading
+### Environment files
 
 Nub loads `.env`, `.env.local`, `.env.<NODE_ENV>`, and `.env.<NODE_ENV>.local` automatically — Vite/Bun precedence rules, `${VAR}` expansion included — and injects them before Node starts. One deliberate exception: `.env.local` is skipped under `NODE_ENV=test`, following the Next.js convention, so local secrets don't leak into your test suite.
 
@@ -202,25 +202,25 @@ nub node uninstall 22   # remove a version
 
 ## Modern APIs
 
-The polyfilled rows work on every Node version Nub supports — feature-detected, native wins. The unflagged rows are exact per-version bands; each maps to a named entry in Nub's flag table. Node has been closing this gap itself. The table is a moving target by design: as your Node floor rises, the polyfills feature-detect and step aside. Same code, no migration.
+Every API in the table below works on every Node version Nub supports — same code, no migration. Below the version where Node stabilized each API, Nub injects the experimental flag or preloads a polyfill; above it the API is native and Nub steps aside entirely. Node has been closing this gap itself; as your Node floor rises, the shims feature-detect and step aside.
 
-**Native** — Node ships it; Nub steps aside entirely. **Unflagged** — Node implements it behind an `--experimental-*` flag; Nub injects the flag. **Polyfilled** — Nub preloads an established community polyfill until your Node floor reaches the native line.
+**Native** — Node ships it; Nub steps aside entirely. **Unflagged** — available from the listed floor via flag injection. **Polyfilled** — Nub preloads an established community polyfill until your Node floor reaches the native line.
 
-| API | Native since | On older supported Nodes |
+| API | Native since | Minimum version |
 |---|---|---|
-| `Worker` | — | polyfilled over `node:worker_threads` |
-| `Temporal` | Node 26 | polyfilled |
-| `URLPattern` | Node 24 | polyfilled |
-| `WebSocket` | Node 22.0 | unflagged on 20.10–21.x; absent below 20.10 |
-| `EventSource` | — | unflagged on 20.18+ and 22.3+; absent below |
-| `localStorage` | Node 25 | opt-in via `--localstorage-file`; undefined otherwise. On 22.4–24, Nub also injects `--experimental-webstorage` when you pass the file |
-| `sessionStorage` | Node 25 | unflagged on 22.4–24 — in-memory and per-process by design |
-| `vm.Module` | — | unflagged on the entire 18.19+ floor |
-| `node:sqlite` | Node 22.13 | unflagged on 22.5–22.12; absent below 22.5 |
-| `RegExp.escape` | Node 24 | polyfilled |
-| `Error.isError` | Node 24 | polyfilled |
-| `Promise.try` | Node 24 | polyfilled |
-| `Float16Array` | Node 24 | polyfilled |
+| [`Worker`](https://developer.mozilla.org/en-US/docs/Web/API/Worker) | — | — |
+| [`Temporal`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal) | Node 26 | — |
+| [`URLPattern`](https://developer.mozilla.org/en-US/docs/Web/API/URLPattern) | Node 24 | — |
+| [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) | Node 22.0 | Node 20.10 |
+| [`EventSource`](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) | — | Node 20.18 |
+| [`localStorage`](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage) | Node 25 | opt-in via `--localstorage-file`; undefined otherwise. On 22.4–24, Nub also injects `--experimental-webstorage` when you pass the file |
+| [`sessionStorage`](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage) | Node 25 | — |
+| [`vm.Module`](https://nodejs.org/api/vm.html#class-vmmodule) | — | — |
+| [`node:sqlite`](https://nodejs.org/api/sqlite.html) | Node 22.13 | Node 22.5 |
+| [`RegExp.escape`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/escape) | Node 24 | — |
+| [`Error.isError`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/isError) | Node 24 | — |
+| [`Promise.try`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/try) | Node 24 | — |
+| [`Float16Array`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float16Array) | Node 24 | — |
 
 ### `Worker`
 
@@ -257,7 +257,7 @@ match?.pathname.groups.id; // "42"
 
 ### `WebSocket`
 
-Browser-standard WebSocket client. On by default since Node 22.0; on 20.10–21.x Nub injects `--experimental-websocket`. Below 20.10 Node has no WebSocket client, and Nub doesn't fake one.
+Browser-standard WebSocket client. Available from Node 20.10+; Nub injects `--experimental-websocket` below 22.0, native above. Below 20.10 Node has no WebSocket client and Nub doesn't fake one.
 
 ```ts
 const ws = new WebSocket("wss://api.example.com/stream");
@@ -268,7 +268,7 @@ ws.addEventListener("open", () => ws.send("hello"));
 
 ### `EventSource`
 
-SSE client — handy for LLM streaming. Behind `--experimental-eventsource` on every Node that ships it (20.18+, 22.3+); Nub injects the flag.
+SSE client — handy for LLM streaming. Available from Node 20.18+; Nub injects `--experimental-eventsource` until Node stabilizes the API.
 
 ```ts
 const stream = new EventSource("https://api.example.com/llm/stream");
@@ -300,7 +300,7 @@ mod.namespace.answer; // 42
 
 ### `node:sqlite`
 
-Embedded SQLite. On by default since Node 22.13 / 23.4; Nub injects `--experimental-sqlite` on 22.5–22.12 and 23.0–23.3. It doesn't exist below 22.5.
+Embedded SQLite. Available from Node 22.5+; Nub injects `--experimental-sqlite` until 22.13 where Node stabilized it. Below 22.5 it doesn't exist and Nub doesn't fake it.
 
 ```ts
 import { DatabaseSync } from "node:sqlite";
@@ -381,7 +381,7 @@ nub -r --workspace-concurrency 4 build   # cap parallel jobs
 
 ### Drop-in compatible
 
-Everything your scripts depend on still works: the `npm_*` env vars, `pre` / `post` lifecycle hooks, and pnpm-style `node_modules/.bin` resolution in monorepos. The `.npmrc#script-shell` config key is honored.
+Everything your scripts depend on still works — `npm_*` env vars, `pre`/`post` lifecycle hooks, `node_modules/.bin` resolution in monorepos, and the `.npmrc#script-shell` config key.
 
 > Node 22 shipped its own script runner, `node --run` — roughly 6× faster than `npm run` per Node's own benchmarks, but deliberately stripped down (no lifecycle hooks, no `npm_*` env vars, no workspaces) in ways that break most real projects.
 
@@ -432,11 +432,11 @@ $ nub install   # yarn.lock → read-only (installed from, never rewritten)
 
 The npm, pnpm, and Bun lockfiles round-trip; Yarn is read-only. Run Nub and your old package manager side by side — same file, switch back any time.
 
-Second, on a pnpm project, support is complete: nub reads and honors every config surface pnpm does — `pnpm-workspace.yaml`, `.pnpmfile.cjs`, the `"pnpm"` package.json section, the `npm_config_*` environment — so the install it produces is one real pnpm accepts unchanged.
+Second, on a pnpm project, support is complete: Nub reads and honors every config surface pnpm does — workspace files, hooks, the `"pnpm"` package.json section, and the `npm_config_*` environment — so the install it produces is one real pnpm accepts unchanged.
 
 ### Performance
 
-A warm install points `node_modules` straight at one global store shared across every project, so it writes little more than symlinks. On a 1,168-package fixture that's about 10× faster than pnpm:
+A warm install symlinks `node_modules` into a global store shared across every project instead of copying package files, so almost no files are written. On a 1,168-package fixture that's about 10× faster than pnpm:
 
 <Bench
   label="warm install · 1,168 deps · Linux · hyperfine"
@@ -450,7 +450,7 @@ A warm install points `node_modules` straight at one global store shared across 
   ]}
 />
 
-The win is the global virtual store: package files link into one machine-wide store instead of being copied per project, so a warm install is almost pure symlinks. Bun is fast too, but it still materializes every package into each project — that extra file work is the gap you see above.
+The win is the global virtual store: package files link into one machine-wide store instead of being copied per project, so a warm install mostly creates symlinks rather than copying files. Bun is fast too, but it still materializes every package into each project — that extra file work is the gap you see above.
 
 ### Secure by default
 
@@ -489,8 +489,8 @@ There are no Nub-specific APIs.
 - No `nub:*` module namespace
 - No `@nub/*` npm scope
 - No `"nub"` field in `package.json`
-- No nub lockfile
-- No nub-named config files
+- No Nub lockfile
+- No Nub-named config files
 
 Everything Nub ships is one of:
 
