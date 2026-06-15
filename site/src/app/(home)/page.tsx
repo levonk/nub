@@ -55,7 +55,7 @@ function DocLink({ href, children }: { href: string; children: ReactNode }) {
    serif around it, with a faint tinted pill so a command reads as a command. */
 function HeadingCode({ children }: { children: ReactNode }) {
   return (
-    <code className="rounded-md border border-fd-border/70 bg-fd-muted/40 px-2 py-0.5 align-[0.1em] font-mono text-[0.66em] font-normal tracking-tight text-fd-foreground">
+    <code className="rounded-md border border-fd-border/70 bg-fd-muted/40 px-2 py-0.5 align-[-0.09em] font-mono text-[0.66em] font-normal tracking-tight text-fd-foreground">
       {children}
     </code>
   );
@@ -727,6 +727,30 @@ function RunScriptBand() {
 
           <Feature
             accent="acid"
+            eyebrow="Drop-in for pnpm run"
+            title={<>Flag-for-flag compatible with <HeadingCode>pnpm run</HeadingCode></>}
+            body={
+              <>
+                Nub speaks <Mono>pnpm run</Mono>&rsquo;s flags with the same spelling and
+                semantics, down to the obscure recursive ones. Swap <Mono>pnpm</Mono>{' '}for{' '}
+                <Mono>nub</Mono>{' '}and your CI scripts run unchanged, only faster.
+              </>
+            }
+            visual={
+              <Terminal
+                lines={[
+                  { cmd: 'nub -r --resume-from @org/api build', comment: 'resume from a package' },
+                  { cmd: 'nub -r --reporter=ndjson build', comment: 'machine-readable CI summary' },
+                  { cmd: 'nub -r --stream --reporter-hide-prefix build' },
+                  { cmd: 'nub -r --workspace-concurrency 4 build' },
+                  { cmd: 'nub -r --if-present test', comment: 'skip packages without it' },
+                ]}
+              />
+            }
+          />
+
+          <Feature
+            accent="acid"
             reverse
             eyebrow="Workspaces"
             title="Monorepo-friendly"
@@ -834,6 +858,29 @@ function NubxBand() {
                   { cmd: 'nubx prisma generate', comment: 'then workspace root' },
                   { cmd: 'nubx tsc --noEmit', comment: 'then ancestors' },
                   { cmd: 'nubx --node some-cli', comment: 'run under plain Node' },
+                ]}
+              />
+            }
+          />
+
+          <Feature
+            accent="sky"
+            eyebrow="Drop-in for pnpm exec"
+            title={<>Your <HeadingCode>pnpm exec</HeadingCode> muscle memory just works</>}
+            body={
+              <>
+                The <Mono>nubx</Mono>{' '}and <Mono>nub exec</Mono>{' '}commands take{' '}
+                <Mono>pnpm exec</Mono>&rsquo;s flags, and <Mono>nub dlx</Mono>{' '}matches{' '}
+                <Mono>pnpm dlx</Mono>, shell mode included. Swap <Mono>pnpm</Mono>{' '}for{' '}
+                <Mono>nub</Mono>{' '}and the command you already know runs.
+              </>
+            }
+            visual={
+              <Terminal
+                lines={[
+                  { cmd: 'nub exec -r tsc --build', comment: 'across the workspace' },
+                  { cmd: 'nub exec --parallel vitest', comment: 'every package at once' },
+                  { cmd: "nub dlx -p cowsay -c 'cowsay hi | tr a-z A-Z'", comment: 'dlx shell mode' },
                 ]}
               />
             }
