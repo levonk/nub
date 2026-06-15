@@ -1,0 +1,59 @@
+---
+title: Runtime
+description: What nub adds when it runs your code on stock Node — TypeScript, resolution, env loading, data imports, and modern globals — and the --node escape hatch that turns it all off.
+---
+
+The top-level `nub <file>` command runs a file on the `node` you already have installed. It is a true drop-in for `node <file>` — same argv shape, same flag set, same behavior — and on top of that it augments the runtime: TypeScript and JSX execute directly, imports resolve the way your editor resolves them, `.env*` files load automatically, data files import as parsed values, and modern web/TC39 globals are present even on older Node.
+
+Nub registers a `module.registerHooks()` load hook and injects a small preload, then gets out of the way. Every augmentation rides on Node's own extension surfaces, so nothing here changes how existing Node code behaves — it only adds.
+
+```bash
+nub index.ts
+nub server.tsx
+nub script.js
+```
+
+## A drop-in for `node`
+
+Anything `node <args>` accepts, `nub <args>` accepts too. Pass-through is the default for the entire flag space: diagnostics (`--prof`, `--cpu-prof`, `--report-*`), module-resolution flags (`--conditions`, `--preserve-symlinks`), inspector flags (`--inspect`, `--inspect-brk`), and warning flags (`--no-warnings`, `--trace-deprecation`) all reach Node verbatim. Reading a program from stdin works the same way `node -` does.
+
+```bash
+nub --max-old-space-size=4096 build.ts
+nub --import ./instrument.js server.ts
+nub script.ts --port 3000 --verbose   # everything after the file is your script's argv
+echo 'console.log(1 + 1)' | nub -
+```
+
+## What nub augments
+
+Each augmentation has its own page. In brief:
+
+- **[TypeScript](/docs/runtime/typescript)** — the whole TypeScript surface runs directly, including non-erasable syntax (`enum`, `namespace`, parameter properties). Types are stripped, not checked.
+- **[JSX](/docs/runtime/jsx)** — `.jsx` and `.tsx` files run with the modern automatic runtime by default, configured through `tsconfig.json` or a per-file `@jsxImportSource` pragma.
+- **[Decorators](/docs/runtime/decorators)** — legacy decorators run with no build step under `experimentalDecorators`, including `emitDecoratorMetadata` for the DI / ORM ecosystem.
+- **[Resolution](/docs/runtime/resolution)** — extensionless imports, `.js → .ts` rewriting, and `tsconfig.json` path aliases resolve at runtime, the way `tsc` and your editor resolve them.
+- **[Environment variables](/docs/runtime/env)** — `.env*` files load into the environment before Node starts, with `${VAR}` expansion. No `dotenv`, no `--env-file`.
+- **[Data imports](/docs/runtime/data-imports)** — import `.yaml`, `.toml`, `.jsonc`, `.json5`, and `.txt` files directly as parsed values, with no npm parser and no claimed import specifiers.
+- **[Web APIs](/docs/runtime/web-apis)** — modern web-platform and TC39 globals (Temporal, URLPattern, WebSocket, EventSource, node:sqlite, and more) work out of the box, polyfilled or unflagged per Node-version band.
+- **[Workers](/docs/runtime/workers)** — the browser-shape `Worker` global runs your `.ts` entry points, wrapping `node:worker_threads`.
+- **[Web Storage](/docs/runtime/web-storage)** — `localStorage` / `sessionStorage` behavior and the opt-in that backs persistent storage.
+
+## `--node`
+
+Pass `--node` to run with zero augmentation — no load hook, no preload, no flag injection, no `.env` loading. Your code runs on plain Node, exactly as `node <file>` would.
+
+```bash
+nub --node script.js     # plain Node behavior, no augmentation
+```
+
+The one thing it keeps is version provisioning: `--node` still runs the project's *pinned* Node (from `.node-version` / `.nvmrc`, fetched if missing), not whatever happens to be on your shell `PATH`. That makes it the right tool for differential debugging — "does this reproduce on vanilla Node, on the exact version this project pins?" — which a bare `node script.js` can't answer, because that runs your shell's Node, not the project's.
+
+There is no nub verb for "plain Node" beyond this flag — to run your own shell's Node, just type `node`. The PATH shim nub uses to augment descendant `node` calls is scoped to children of a `nub …` invocation, so your shell's `node` is always your real, unaugmented Node.
+
+```bash
+node script.js           # your real shell Node, no augmentation, no provisioning
+```
+
+## The Node version
+
+Nub doesn't ship a Node runtime — it runs your code on stock Node, resolving which Node to use from your project and fetching one if it's missing. Augmented modes require **Node 18.19+**; below that, augmented commands emit a tagged error telling you to upgrade. For pinning, pre-installing, and listing cached versions, see [Managing Node versions](/docs/node).
