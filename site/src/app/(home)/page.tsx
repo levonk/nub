@@ -1221,8 +1221,9 @@ function FinalCta() {
         <h2 className="text-balance font-display text-4xl font-medium leading-[1.05] md:text-6xl">
           The all-in-one toolkit for Node.js
         </h2>
-        <div className="mt-10 flex flex-col items-center">
+        <div className="mt-10 flex flex-col items-center gap-4">
           <InstallTabs className="mx-auto" />
+          <MigrationPrompt />
         </div>
       </Container>
     </section>

@@ -39,10 +39,10 @@ export function MigrationPrompt({ className = '' }: { className?: string }) {
       type="button"
       onClick={copy}
       aria-label="Copy agent prompt"
-      className={`group inline-flex items-center gap-2.5 rounded-full border border-fd-border bg-fd-card/60 py-2 pl-4 pr-3.5 text-sm leading-none text-fd-muted-foreground backdrop-blur hover:border-ember/50 hover:bg-ember/[0.06] ${className}`}
+      className={`group inline-flex items-center gap-1.5 text-sm leading-none text-fd-muted-foreground hover:text-ember ${className}`}
     >
-      <span className="text-fd-foreground">Copy agent prompt</span>
-      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-fd-muted-foreground group-hover:text-ember">
+      <span className="underline-offset-4 group-hover:underline">Copy agent prompt</span>
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
         {copied ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
