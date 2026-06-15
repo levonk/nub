@@ -1180,11 +1180,15 @@ catalog:
             title={<>A built-in Corepack</>}
             body={
               <>
-                Running <Mono>nub pm shim</Mono>{' '}drops <Mono>npm</Mono>, <Mono>pnpm</Mono>,{' '}
-                <Mono>yarn</Mono>, and <Mono>bun</Mono>{' '}shims under <Mono>~/.nub/shims</Mono>{' '}
-                that route each call to the version your project pins — corepack&rsquo;s job, with no
-                separate install. Then <Mono>nub pm use pnpm@^9</Mono>{' '}provisions that exact
-                version for the whole team.
+                If you want to keep using your <span className="italic">exact</span>{' '}package
+                manager, you can do that too. Nub bundles Corepack-like shims, so you keep your
+                muscle memory without the PM-versioning headaches.{' '}
+                <Link
+                  href="/docs/pm"
+                  className="whitespace-nowrap underline decoration-dotted decoration-fd-muted-foreground/50 underline-offset-4 hover:decoration-fd-muted-foreground"
+                >
+                  Learn more →
+                </Link>
               </>
             }
             visual={
