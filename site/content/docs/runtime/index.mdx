@@ -24,9 +24,9 @@ nub script.ts --port 3000 --verbose   # everything after the file is your script
 echo 'console.log(1 + 1)' | nub -
 ```
 
-## What nub augments
+## Augmentations
 
-Each augmentation has its own page. In brief:
+In brief:
 
 - **[TypeScript](/docs/runtime/typescript)** — the whole TypeScript surface runs directly, including non-erasable syntax (`enum`, `namespace`, parameter properties). Types are stripped, not checked.
 - **[JSX](/docs/runtime/jsx)** — `.jsx` and `.tsx` files run with the modern automatic runtime by default, configured through `tsconfig.json` or a per-file `@jsxImportSource` pragma.
@@ -34,9 +34,52 @@ Each augmentation has its own page. In brief:
 - **[Resolution](/docs/runtime/resolution)** — extensionless imports, `.js → .ts` rewriting, and `tsconfig.json` path aliases resolve at runtime, the way `tsc` and your editor resolve them.
 - **[Environment variables](/docs/runtime/env)** — `.env*` files load into the environment before Node starts, with `${VAR}` expansion. No `dotenv`, no `--env-file`.
 - **[Data imports](/docs/runtime/data-imports)** — import `.yaml`, `.toml`, `.jsonc`, `.json5`, and `.txt` files directly as parsed values, with no npm parser and no claimed import specifiers.
-- **[Web APIs](/docs/runtime/web-apis)** — modern web-platform and TC39 globals (Temporal, URLPattern, WebSocket, EventSource, node:sqlite, and more) work out of the box, polyfilled or unflagged per Node-version band.
+- **[Modern APIs](#modern-apis)** — modern globals and built-ins (Temporal, URLPattern, WebSocket, EventSource, node:sqlite, and more) work out of the box, polyfilled or unflagged per Node-version band.
 - **[Workers](/docs/runtime/workers)** — the browser-shape `Worker` global runs your `.ts` entry points, wrapping `node:worker_threads`.
 - **[Web Storage](/docs/runtime/web-storage)** — `localStorage` / `sessionStorage` behavior and the opt-in that backs persistent storage.
+
+## Modern APIs
+
+<Callout title="TypeScript setup">
+Most of these globals are already typed by `@types/node` 26 plus TypeScript's bundled libs — use that version and they typecheck with no extra setup. The one exception is `reportError`, which lives in nub's own types package; if you call it, install `@nubjs/types` as a devDependency alongside `@types/node` and add both to `compilerOptions.types`: `["node", "@nubjs/types"]`.
+</Callout>
+
+Modern globals — TC39, web-platform, and newer Node built-ins — work out of the box under nub. Whatever Node version you run, the API is there — native where Node ships it, and where Node doesn't, nub fills the gap automatically. You write against the API; the version split is nub's problem, not yours.
+
+```ts
+const now = Temporal.Now.plainDateTimeISO();
+const route = new URLPattern({ pathname: "/u/:id" });
+const ws = new WebSocket("wss://api.example.com");
+const stream = new EventSource("https://api/stream");
+const { DatabaseSync } = require("node:sqlite");
+```
+
+Two mechanisms do the work, picked per API: nub either preloads a JS polyfill (feature-detected, so it steps aside the moment the native global appears) or injects the `--experimental-*` flag that an older Node hides the API behind. Once Node stabilizes an API, it's native and nub does nothing — there's no gap above the line, just a native implementation.
+
+The **available from** column is the practical floor — the lowest Node where the API works under nub. Everything above that floor is covered, native or not.
+
+| API | Available from | How |
+|---|---|---|
+| `Temporal` | every supported Node | polyfill |
+| `URLPattern` | every supported Node | polyfill below Node 24, native above |
+| `RegExp.escape` | every supported Node | polyfill below Node 24, native above |
+| `Error.isError` | every supported Node | polyfill below Node 24, native above |
+| `Promise.try` | every supported Node | polyfill below Node 24, native above |
+| `Float16Array` | every supported Node | polyfill below Node 24, native above |
+| `navigator.locks` | every supported Node | polyfill below Node 24.5, native above |
+| `reportError` | every supported Node | polyfill |
+| `vm.Module` | every supported Node | flag-injected |
+| `WebSocket` | Node 20.10 | flag-injected below Node 22, native above |
+| `EventSource` | Node 20.18 | flag-injected below the native line, native above |
+| `node:sqlite` | Node 22.5 | flag-injected below Node 22.13, native above |
+
+"Every supported Node" means the full supported range, 18.19 and up. The three floored rows are the only ones with a real cutoff: the underlying Node mechanism doesn't exist below it.
+
+- The `WebSocket` global needs Node 20.10 — the flag nub injects below the native line (Node 22) doesn't exist on older 20.x patches.
+- The `EventSource` global needs Node 20.18, the patch where Node added the flag on the 20 LTS line. Below that, Node has no EventSource for nub to reach.
+- The `node:sqlite` module needs Node 22.5, where Node first shipped it. Below that the module doesn't exist.
+
+Polyfilled rows carry no version cutoff at all — they're gated by a runtime `typeof` check, so they load on whatever you run and bow out as soon as the native global is present.
 
 ## `--node`
 
@@ -54,6 +97,6 @@ There is no nub verb for "plain Node" beyond this flag — to run your own shell
 node script.js           # your real shell Node, no augmentation, no provisioning
 ```
 
-## The Node version
+## Supported Node versions
 
 Nub doesn't ship a Node runtime — it runs your code on stock Node, resolving which Node to use from your project and fetching one if it's missing. Augmented modes require **Node 18.19+**; below that, augmented commands emit a tagged error telling you to upgrade. For pinning, pre-installing, and listing cached versions, see [Managing Node versions](/docs/node).
