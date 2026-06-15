@@ -1270,6 +1270,16 @@ function Footer() {
             </p>
           </div>
           <FooterCol
+            title="Resources"
+            links={[
+              ['Docs', '/docs'],
+              ['Blog', '/blog'],
+              ['FAQ', '/docs/faq'],
+              ['GitHub', 'https://github.com/nubjs/nub'],
+              ['License', 'https://github.com/nubjs/nub/blob/main/LICENSE'],
+            ]}
+          />
+          <FooterCol
             title="Toolkit"
             links={[
               ['File runner', '/docs/files'],
@@ -1278,16 +1288,6 @@ function Footer() {
               ['Package manager', '/docs/pm'],
               ['Version manager', '/docs/node'],
               ['Watch mode', '/docs/watch'],
-            ]}
-          />
-          <FooterCol
-            title="Resources"
-            links={[
-              ['Docs', '/docs'],
-              ['Blog', '/blog'],
-              ['FAQ', '/docs/faq'],
-              ['GitHub', 'https://github.com/nubjs/nub'],
-              ['License', 'https://github.com/nubjs/nub/blob/main/LICENSE'],
             ]}
           />
         </div>
