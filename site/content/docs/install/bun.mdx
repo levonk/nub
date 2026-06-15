@@ -1,15 +1,15 @@
 ---
 title: Bun
-description: When Bun is the incumbent, Nub installs against it — the bun.lock text lockfile round-trips unbroken, trustedDependencies is honored for build trust, overrides/resolutions/patchedDependencies and workspaces+catalogs all resolve Bun's way.
+description: When Bun is the incumbent, Nub installs against it — the bun.lock text lockfile round-trips byte-for-byte, trustedDependencies gates build scripts, and overrides/resolutions/patchedDependencies/catalogs all resolve Bun's way.
 ---
 
-When Bun is the incumbent package manager, Nub installs against it: the `bun.lock` text lockfile round-trips unbroken, top-level `trustedDependencies` is honored for build-script trust, and `overrides` / `resolutions`, `patchedDependencies`, and workspaces + catalogs all resolve the way Bun resolves them. Nub does not write its own lockfile into a Bun project.
+When Bun is the incumbent package manager, Nub installs against it and writes no lockfile of its own. The `bun.lock` text lockfile round-trips byte-for-byte; `trustedDependencies`, `overrides` / `resolutions`, `patchedDependencies`, and workspaces + catalogs all resolve the way Bun resolves them.
 
 <CompatTable
   rows={[
     { feature: <code>bun.lock</code>, status: 'yes', note: 'text format, read + write' },
-    { feature: <code>bun.lockb</code>, status: 'no', note: 'binary format, not supported' },
-    { feature: <code>bunfig.toml</code>, status: 'no' },
+    { feature: <code>bun.lockb</code>, status: 'no', note: 'binary format, rejected' },
+    { feature: <code>bunfig.toml</code>, status: 'no', note: 'use .npmrc instead' },
     { feature: <code>trustedDependencies</code>, status: 'yes' },
     { feature: <code>overrides</code>, status: 'yes' },
     { feature: <code>resolutions</code>, status: 'yes' },
@@ -20,34 +20,26 @@ When Bun is the incumbent package manager, Nub installs against it: the `bun.loc
   ]}
 />
 
-(Both `overrides` and `resolutions` are honored; when both pin the same package, top-level `overrides` wins — Bun's own precedence. `patchedDependencies` patches apply at materialize time, and `workspaces` + catalogs resolve to local workspace packages.)
-
-```bash
-# A project with a bun.lock — nub installs in place, lockfile untouched
-nub install
-# bun.lock stays byte-identical; no pnpm-lock.yaml is written
-```
-
 ## `bun.lock`
 
-The text lockfile (`bun.lock`, bun 1.2+ default) is read, written, and round-tripped. Nub preserves it as-is rather than converting to its own format.
+The text lockfile (Bun 1.2+ default) is read, written, and preserved as-is.
 
 ```console
-# captured: nub 0.0.44 — nub install in a bun.lock project, then diff against the original
+# captured: nub 0.0.44 — install in a bun.lock project, then diff the lockfile
 $ nub install
 dependencies:
 + is-odd@3.0.1
 
 nub 0.0.44 · ✓ installed 2 packages in 38ms
 
-$ diff bun.lock bun.lock.orig    # byte-identical (no output)
-$ ls pnpm-lock.yaml              # no foreign lockfile written
+$ diff bun.lock bun.lock.orig    # ✓ byte-identical (no output)
+$ ls pnpm-lock.yaml              # ✓ no foreign lockfile written
 ls: pnpm-lock.yaml: No such file or directory
 ```
 
 ## `bun.lockb`
 
-The legacy binary lockfile (`bun.lockb`, pre-1.2) is not supported. If a project has only a `bun.lockb` and no text `bun.lock`, Nub errors with an actionable hint rather than guessing or falling through to another format.
+The legacy binary lockfile (pre-1.2) is **not** read. With only a `bun.lockb` and no text `bun.lock`, Nub refuses up front rather than guess or fall through to another format:
 
 ```console
 # captured: nub 0.0.44 — a project with only bun.lockb
@@ -55,17 +47,20 @@ $ nub install
 ERR_NUB_LOCKFILE_PARSE
 
   × failed to parse lockfile
-  ╰─▶ failed to parse lockfile /path/to/bun.lockb: bun.lockb
+  ╰─▶ failed to parse lockfile /path/to/bun.lockb: bun.lockb    # ❌ binary format rejected
       (binary format) is not supported — run `bun install --save-text-
       lockfile` to generate a bun.lock text file first, or upgrade to bun 1.2+
       where text is the default
+
+$ echo $?
+11
 ```
 
 Run `bun install --save-text-lockfile` once to migrate, then Nub round-trips the resulting `bun.lock`.
 
 ## `trustedDependencies`
 
-Bun gates dependency build scripts behind a `trustedDependencies` allowlist in `package.json`; only listed packages run their `postinstall`/`install` scripts. Nub honors that array when Bun is the incumbent. A package not on the list is installed but its build scripts are skipped, with a warning; adding it to `trustedDependencies` lets the scripts run.
+Bun gates dependency build scripts behind a `trustedDependencies` allowlist in `package.json`. Nub mirrors it exactly when Bun is the incumbent: listed packages run their `install`/`postinstall` scripts, everything else is installed without building.
 
 ```jsonc
 // package.json
@@ -76,7 +71,7 @@ Bun gates dependency build scripts behind a `trustedDependencies` allowlist in `
 ```
 
 ```console
-# captured: nub 0.0.44 — WITHOUT the package in trustedDependencies (bun.lock incumbent) — scripts skipped
+# captured: nub 0.0.44 — esbuild NOT in trustedDependencies — build skipped
 $ nub install
 dependencies:
 + esbuild@0.21.5
@@ -84,7 +79,7 @@ dependencies:
 nub 0.0.44 · ✓ installed 2 packages in 33ms
 WARN ignored build scripts for 1 package(s): esbuild@0.21.5. Run `nub approve-builds` to review and enable them, or set `strictDepBuilds=true` to fail installs that have unreviewed builds. code=WARN_NUB_IGNORED_BUILD_SCRIPTS count=1 packages=["esbuild@0.21.5"]
 
-# captured: nub 0.0.44 — WITH "esbuild" in trustedDependencies — scripts run (no warning)
+# captured: nub 0.0.44 — esbuild IN trustedDependencies — build runs
 $ nub install
 dependencies:
 + esbuild@0.21.5
@@ -92,22 +87,17 @@ dependencies:
 nub 0.0.44 · ✓ installed 2 packages in 35ms
 ```
 
-How the default-trust floor interacts with Bun:
-
-- **The curated default-trust floor is on, but inert over an existing `bun.lock`.** Nub's `defaultTrust` floor (the curated allowlist described under [post-install](/docs/install#post-install)) is enabled by default. But its cooling-window gate needs per-package publish-time data, and a `bun.lock` carries none. Over an incumbent `bun.lock` the floor therefore fails closed: a curated package like `esbuild` is **not** auto-trusted (the A/B above shows it skipped with `WARN_NUB_IGNORED_BUILD_SCRIPTS`, not the `WARN_NUB_DEFAULT_TRUST_BUILDS` you'd see on a pnpm-incumbent or fresh-resolve install). So in a Bun project the effective trust model is exactly Bun's: **`trustedDependencies` is the allowlist; nothing else builds automatically.**
-- **Bun's own `trustedDependencies` is exactly mirrored.** Listed packages build; unlisted ones don't.
-
-One forward-looking note: the engine honors `trustedDependencies` only when the project's declared Bun major is below 10 (`bun@10+` ignores it). Bun is currently at 1.x and has not shipped a v10 or removed the field — this is a forward-compatibility guard modeled on pnpm@10's `onlyBuiltDependencies` rename, **not** an observed change in any released Bun. For every current Bun version, `trustedDependencies` is honored.
+Nub's curated default-trust floor is on, but inert over a `bun.lock`: its cooling-window gate needs per-package publish-time data, and `bun.lock` carries none, so it fails closed. `trustedDependencies` is the only allowlist that builds anything — exactly Bun's model.
 
 ## Gaps
 
-- **No `bunfig.toml`.** This is the one real config gap. Nub does not read `bunfig.toml` — neither the project file nor the global `~/.bunfig.toml`. Registry URLs, `cafile`, and `[install.scopes]` scoped-registry/auth declared *only* in `bunfig.toml` are not picked up. In practice this is mitigated: Nub reads `.npmrc` (project and user), and Bun reads `.npmrc` too. Keep registry, auth tokens, and scoped-registry config in `.npmrc` and both tools agree. The gap bites only config that lives exclusively in `bunfig.toml` — there Nub falls back to the public npm registry and misses private-scope auth. (Verified: with Bun incumbent, `nub config get registry` returns the project `.npmrc` value.)
+- **No `bunfig.toml`.** Registry URLs, `cafile`, and `[install.scopes]` auth declared only in `bunfig.toml` (project or `~/.bunfig.toml`) are not read. Both Nub and Bun read `.npmrc`, so keep shared registry/auth config there:
 
   ```ini
-  # .npmrc — honored by both nub and bun; prefer this over bunfig.toml for shared config
+  # .npmrc — honored by both nub and bun
   //registry.example.com/:_authToken=${NPM_TOKEN}
   @myscope:registry=https://registry.example.com/
   ```
 
-- **No `bun.lockb`.** The legacy binary lockfile (pre-1.2) is rejected, not migrated. Run `bun install --save-text-lockfile` once to produce a `bun.lock` text file first.
-- **The default-trust floor is inert over an existing `bun.lock`.** Because a `bun.lock` carries no publish-time data, the cooling-window gate fails closed and curated packages are not auto-trusted; `trustedDependencies` is the only allowlist that builds anything.
+- **No `bun.lockb`.** The binary lockfile is rejected, not migrated — run `bun install --save-text-lockfile` to produce a `bun.lock` first.
+- **Default-trust floor inert over `bun.lock`.** No publish-time data means curated packages aren't auto-trusted; only `trustedDependencies` builds.
