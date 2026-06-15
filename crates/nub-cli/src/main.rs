@@ -1,5 +1,6 @@
 mod agent;
 mod cli;
+mod init;
 mod pm_engine;
 
 use anyhow::Result;
