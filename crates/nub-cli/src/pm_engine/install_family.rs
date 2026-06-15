@@ -808,6 +808,9 @@ pub struct CiFlags {
 /// `nub install` — route through the embedded aube install engine.
 pub fn run_install(flags: InstallFlags) -> Result<i32> {
     let session = super::engine_session(flags.dir.as_deref())?;
+    if let Some(err) = pnpm_lockfile_version_preflight(&session) {
+        return Err(err);
+    }
 
     // Mirror `run_install_command`: defaults from clap, nub's flags on top.
     let mut args = default_install_args();
@@ -889,6 +892,9 @@ pub fn run_install(flags: InstallFlags) -> Result<i32> {
 /// hooks on unless `--ignore-scripts`.
 pub fn run_ci(flags: CiFlags) -> Result<i32> {
     let session = super::engine_session(flags.dir.as_deref())?;
+    if let Some(err) = pnpm_lockfile_version_preflight(&session) {
+        return Err(err);
+    }
 
     // `--registry`: mirror `aube ci`'s `args.network.install_overrides()`
     // (the registry override is process-global; only set when given so the
@@ -977,6 +983,86 @@ fn yarn_drift_reason(dir: &Path) -> Option<String> {
         }
     }
     None
+}
+
+// ───────────────────────── pnpm lockfile-version gate ──────────────────────────
+
+/// The pnpm `lockfileVersion` major that nub's embedded reader understands.
+/// pnpm 9+ writes `lockfileVersion: '9.0'`; pnpm 8 wrote `'6.0'`, pnpm 7
+/// `'5.4'`, and so on. The reader only models the v9 `importers:` shape — a
+/// v6/v5.4 lockfile's top-level `dependencies:` map deserializes as an empty
+/// project, so an install against it would silently link nothing. This gate
+/// turns that silent no-op into an upfront refusal.
+const PNPM_SUPPORTED_LOCKFILE_MAJOR: u64 = 9;
+
+/// Pre-flight: refuse an install when the active `pnpm-lock.yaml` is a
+/// `lockfileVersion` nub can't read (anything but v9 today), instead of
+/// treating the unreadable lockfile as an empty project and linking nothing.
+///
+/// Returns `Some(err)` to abort, `None` to proceed. Fires only for a real
+/// on-disk `pnpm-lock.yaml` that is the project's *resolved* lockfile (kind
+/// `Pnpm`, not `fresh`); every other identity (npm/yarn/bun/aube, or a
+/// declared-but-absent pnpm lockfile) is out of scope. The check is read-only
+/// — it never touches `node_modules` or the lockfile, so on refusal both are
+/// left exactly as found. Any read/parse hiccup (unreadable file, malformed
+/// YAML, missing `lockfileVersion`) returns `None`: those are the engine's to
+/// diagnose with its own richer errors, not this narrow guard's.
+fn pnpm_lockfile_version_preflight(session: &EngineSession) -> Option<anyhow::Error> {
+    let detected = session.detected.as_ref()?;
+    if detected.kind != LockfileKind::Pnpm || detected.fresh {
+        return None;
+    }
+    let path = detected
+        .dir
+        .join(aube_lockfile::pnpm_lock_filename(&detected.dir));
+    let content = std::fs::read_to_string(&path).ok()?;
+    let version = parse_pnpm_lockfile_version(&content)?;
+    let major = version.split('.').next().and_then(|m| m.parse::<u64>().ok());
+    if major == Some(PNPM_SUPPORTED_LOCKFILE_MAJOR) {
+        return None;
+    }
+    Some(unsupported_lockfile_version_error(&version))
+}
+
+/// Read just the top-level `lockfileVersion` scalar from a `pnpm-lock.yaml`,
+/// normalized to a dotted string. pnpm has written it both quoted
+/// (`'9.0'` / `'6.0'`) and bare-numeric (`5.4`), so we accept either YAML
+/// scalar shape and render it back as a dotted version string.
+fn parse_pnpm_lockfile_version(content: &str) -> Option<String> {
+    let root: serde_yaml::Value = serde_yaml::from_str(content).ok()?;
+    let version = root.get("lockfileVersion")?;
+    match version {
+        serde_yaml::Value::String(s) => Some(s.clone()),
+        serde_yaml::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// The hard-error for an unreadable `pnpm-lock.yaml` version. Carries the
+/// engine's stable `ERR_AUBE_LOCKFILE_UNSUPPORTED_FORMAT` code (rewritten to
+/// `ERR_NUB_*` by [`present`], exit 12 via the engine's table) and names the
+/// detected version plus the re-lock remedy.
+fn unsupported_lockfile_version_error(version: &str) -> anyhow::Error {
+    let pnpm_era = pnpm_era_for_lockfile_version(version);
+    let report = miette::miette!(
+        code = aube_codes::errors::ERR_AUBE_LOCKFILE_UNSUPPORTED_FORMAT,
+        help = "Re-lock under pnpm 9+ (`pnpm install`), then `nub install`.",
+        "pnpm-lock.yaml is lockfileVersion {version}{pnpm_era}; nub reads v9 (pnpm 9+)."
+    );
+    anyhow::anyhow!("{}", present::render_report(&report))
+}
+
+/// Map a pnpm `lockfileVersion` to a parenthetical naming the pnpm release
+/// that wrote it, for the refusal message. Only the versions a user is
+/// realistically carrying are named; anything else gets no parenthetical
+/// (the version number alone is unambiguous).
+fn pnpm_era_for_lockfile_version(version: &str) -> &'static str {
+    match version {
+        "6.0" | "6" => " (pnpm 8)",
+        "5.4" => " (pnpm 7)",
+        "5.3" => " (pnpm 6)",
+        _ => "",
+    }
 }
 
 /// Run the install on the session runtime, route failures through the
@@ -1234,6 +1320,47 @@ mod tests {
                 "usage names nub {typed}: {help}"
             );
         }
+    }
+
+    /// The pnpm lockfile-version scalar is read from either YAML shape pnpm
+    /// has shipped — quoted (`'9.0'` / `'6.0'`) and bare-numeric (`5.4`) —
+    /// and missing/garbage returns None (the engine diagnoses those).
+    #[test]
+    fn pnpm_lockfile_version_parses_quoted_and_numeric_scalars() {
+        assert_eq!(
+            parse_pnpm_lockfile_version("lockfileVersion: '9.0'\nimporters:\n"),
+            Some("9.0".to_string())
+        );
+        assert_eq!(
+            parse_pnpm_lockfile_version("lockfileVersion: '6.0'\ndependencies:\n"),
+            Some("6.0".to_string())
+        );
+        assert_eq!(
+            parse_pnpm_lockfile_version("lockfileVersion: 5.4\ndependencies:\n"),
+            Some("5.4".to_string())
+        );
+        assert_eq!(parse_pnpm_lockfile_version("importers:\n  .: {}\n"), None);
+    }
+
+    /// The refusal names the detected version, the pnpm era that wrote it,
+    /// the v9 requirement, and the re-lock remedy — and carries the engine's
+    /// stable unsupported-format code rewritten to nub's namespace (the
+    /// contract scripts branch on).
+    #[test]
+    fn unsupported_lockfile_version_error_names_version_era_and_remedy() {
+        let msg = unsupported_lockfile_version_error("6.0").to_string();
+        assert!(msg.contains("lockfileVersion 6.0 (pnpm 8)"), "{msg}");
+        assert!(msg.contains("nub reads v9 (pnpm 9+)"), "{msg}");
+        assert!(msg.contains("Re-lock under pnpm 9+"), "{msg}");
+        assert!(
+            msg.contains("ERR_NUB_LOCKFILE_UNSUPPORTED_FORMAT")
+                && !msg.contains("ERR_AUBE_"),
+            "code must be rebranded to nub's namespace: {msg}"
+        );
+
+        // An unrecognized version still refuses, just without the era hint.
+        let msg = unsupported_lockfile_version_error("4.0").to_string();
+        assert!(msg.contains("lockfileVersion 4.0;"), "{msg}");
     }
 
     /// The yarn gate names the verb it refused and a copy-pasteable yarn

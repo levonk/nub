@@ -37,18 +37,21 @@ Lockfile is up to date, resolution step is skipped
 
 The round-trip holds both directions, for single packages and for workspaces with `catalog:` and `workspace:` entries (verified against pnpm 10.15.1). Nub adds one thing pnpm doesn't: a `time:` block of per-package publish timestamps used by the resolver's release-age floor. pnpm tolerates and preserves it, so a `git diff` against a pnpm-written lockfile will show it.
 
-Older formats — v6 (pnpm 8) and v5.4 (pnpm 7) — keep root dependencies under a top-level `dependencies:` map instead of v9's `importers:`. Nub's reader looks only at `importers:`, so it sees an empty project, treats the install as satisfied, and links nothing:
+Older formats — v6 (pnpm 8) and v5.4 (pnpm 7) — keep root dependencies under a top-level `dependencies:` map instead of v9's `importers:`, which Nub's reader doesn't understand. Rather than misread one as an empty project and link nothing, Nub refuses up front and leaves your `node_modules` and lockfile untouched:
 
 ```console
 # captured: nub 0.0.44 on a lockfileVersion: '6.0' lockfile
 $ nub install
-nub 0.0.44 · ✓ Already up to date
+Error: ERR_NUB_LOCKFILE_UNSUPPORTED_FORMAT
 
-$ ls node_modules/is-odd
-ls: node_modules/is-odd: No such file or directory      # ❌ nothing linked
+  × pnpm-lock.yaml is lockfileVersion 6.0 (pnpm 8); nub reads v9 (pnpm 9+).
+  help: Re-lock under pnpm 9+ (`pnpm install`), then `nub install`.
+
+$ echo $?
+1                                                       # ❌ refused, nothing linked
 ```
 
-This is a silent no-op, not a clean error — migrate by running a one-time `pnpm install` (or `pnpm dedupe`) under pnpm 9+ to upgrade the lockfile to v9 first.
+The refusal names the detected version (v5.4 reads `(pnpm 7)`). Migrate by running a one-time `pnpm install` under pnpm 9+ to upgrade the lockfile to v9, then `nub install`.
 
 ## Config
 
@@ -101,7 +104,7 @@ Lifecycle scripts for dependencies are skipped by default, exactly as pnpm 10 do
 
 ## Gaps
 
-- **Lockfile is v9-only.** v6 (pnpm 8) and v5.4 (pnpm 7) are not parsed — Nub silently treats them as an empty/satisfied project and links nothing. Migrate with pnpm 9+ first.
+- **Lockfile is v9-only.** v6 (pnpm 8) and v5.4 (pnpm 7) are not parsed — Nub refuses with `ERR_NUB_LOCKFILE_UNSUPPORTED_FORMAT` (exit 1) and leaves `node_modules` and the lockfile untouched. Re-lock with pnpm 9+ first.
 - **No `nodeLinker: pnp`.** Only `isolated` (default) and `hoisted`; `--node-linker pnp` errors.
 - **Virtual store is `node_modules/.nub/`, not `.pnpm/`.** Equivalent shape, not byte-shared; alternating tools relinks.
 - **Config is incumbent-gated.** A non-pnpm-incumbent project ignores `pnpm-workspace.yaml`, `pnpm.*`, and `.pnpmfile.cjs` (with a warning for the pnpmfile).
