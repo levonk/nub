@@ -82,14 +82,14 @@ In practice, none of these Yarn-config keys take effect under Nub:
 
 ```yaml
 # .yarnrc.yml — ALL IGNORED by nub
-npmRegistryServer: https://registry.internal/   # ignored — nub reads .npmrc `registry=`
-npmScopes:                                       # ignored — per-scope registries unread
+npmRegistryServer: https://registry.internal/   # ❌ ignored — nub reads .npmrc `registry=`
+npmScopes:                                       # ❌ ignored — per-scope registries unread
   myorg:
     npmRegistryServer: https://npm.myorg.dev/
-    npmAuthToken: ...                            # ignored — private-dep auth NOT applied
-npmAuthToken: ...                                # ignored
-httpsCaFilePath: ./ca.pem                        # ignored
-httpProxy: http://proxy:8080                     # ignored
+    npmAuthToken: ...                            # ❌ ignored — private-dep auth NOT applied
+npmAuthToken: ...                                # ❌ ignored
+httpsCaFilePath: ./ca.pem                        # ❌ ignored
+httpProxy: http://proxy:8080                     # ❌ ignored
 ```
 
 If your private-registry auth or custom registry lives in `.yarnrc.yml` (which for Berry is the *only* place it lives), Nub will not pick it up and private installs fail with 401/403. Put the equivalent settings in `.npmrc`, which Nub does read.
@@ -100,8 +100,8 @@ Nub produces a **hoisted `node_modules`** for a Yarn project regardless of any `
 
 ```yaml
 # .yarnrc.yml
-nodeLinker: pnp     # nub installs hoisted node_modules instead
-nodeLinker: pnpm    # also produces hoisted
+nodeLinker: pnp     # ❌ nub installs hoisted node_modules instead
+nodeLinker: pnpm    # ❌ also hoisted
 ```
 
 **Nub-the-runtime fully supports Plug'n'Play.** If a project was *already* installed by Yarn in PnP mode, Nub can run it — `nub <file>`, `nub run`, and `nubx` honor `.pnp.cjs` across all supported Node versions. What Nub cannot do is *produce* a PnP install. So the supported workflow for a PnP project is: install with `yarn`, run with `nub`.
