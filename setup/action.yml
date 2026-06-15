@@ -1,0 +1,44 @@
+name: "Setup nub"
+description: "Install the nub CLI on a GitHub Actions runner and put it on PATH."
+author: "nubjs"
+
+branding:
+  icon: "package"
+  color: "purple"
+
+inputs:
+  version:
+    description: "Version of nub to install — a semver range understood by npm (e.g. 0.0.44, ^0.0, latest). Defaults to the latest published release."
+    required: false
+    default: "latest"
+
+outputs:
+  version:
+    description: "The installed nub version, as reported by `nub --version` (a bare v<semver>)."
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    # Install globally via npm, which is preinstalled on every GitHub-hosted
+    # runner. npm pulls the matching @nubjs/nub-<platform> optional dependency for
+    # the runner's OS/arch automatically, links the `nub`/`nubx` bins into the npm
+    # global bin directory (already on PATH on ubuntu/macos/windows runners), and
+    # runs nub's postinstall to set the binary's execute bit.
+    - name: Install nub
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="${{ inputs.version }}"
+        echo "Installing @nubjs/nub@${version}"
+        npm install -g "@nubjs/nub@${version}"
+
+        # `nub --version` prints a bare `v<semver>` on stdout (the resolved Node
+        # rides on stderr); 2>/dev/null keeps the output a clean version string.
+        installed="$(nub --version 2>/dev/null)"
+        echo "Installed nub ${installed}"
+        echo "version=${installed}" >> "$GITHUB_OUTPUT"
+
+# TODO: cache the global install across runs (actions/cache on the npm global
+# prefix, keyed on inputs.version + runner.os) once the action proves out.
