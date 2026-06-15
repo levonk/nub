@@ -19,7 +19,7 @@ function CopyIcon({ copied }: { copied: boolean }) {
   );
 }
 
-const DEFAULT_INSTALL = 'npm i -D @nubjs/types @types/node@26';
+const DEFAULT_INSTALL = 'npm i -D @nubjs/types @types/node@25';
 const DEFAULT_TSCONFIG = `{ "compilerOptions": { "types": ["node", "@nubjs/types"] } }`;
 
 export function TypesSetup({
@@ -78,17 +78,9 @@ export function TypesSetup({
 
       <div className="mb-1 pr-8 font-medium text-fd-foreground">TypeScript setup</div>
 
-      {children ? <div className="mb-3 text-fd-muted-foreground [&>p]:m-0">{children}</div> : null}
+      {children ? <div className="mb-3 text-[0.9375rem] text-fd-muted-foreground [&>p]:m-0">{children}</div> : null}
 
-      <pre className="overflow-x-auto rounded-lg border border-fd-border bg-fd-card/60 px-4 py-3.5 font-mono text-[0.9rem] leading-relaxed text-fd-foreground">
-        <code>
-          <span className="select-none text-ember">$ </span>
-          {install}
-          {'\n\n'}
-          <span className="select-none text-fd-muted-foreground">{'// tsconfig.json\n'}</span>
-          {tsconfig}
-        </code>
-      </pre>
+      <pre className="overflow-x-auto rounded-lg border border-fd-border bg-fd-card/60 px-4 py-3.5 font-mono text-[0.9rem] leading-relaxed text-fd-foreground">{`# install the package\n${install}\n\n# tsconfig.json\n${tsconfig}`}</pre>
     </div>
   );
 }
