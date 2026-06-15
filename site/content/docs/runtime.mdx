@@ -11,7 +11,7 @@ This page is a cookbook of concrete tasks. For the "what is it / how does it wor
 
 Point `nub` at a file — `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.mjs`, `.cjs`, and `.jsx` all run directly. No build step, no `ts-node`, no `tsx` wrapper.
 
-```sh
+```bash
 nub index.ts
 nub server.tsx
 nub script.js
@@ -23,7 +23,7 @@ Nub transpiles the entry file (and any files it imports out of your project sour
 
 Anything `node <args>` accepts, `nub <args>` accepts too — same argv shape, same flag set, same behavior. Pass-through is the default for the entire flag space: diagnostics (`--prof`, `--cpu-prof`, `--report-*`), module-resolution flags (`--conditions`, `--preserve-symlinks`), and warning flags (`--no-warnings`, `--trace-deprecation`) all reach Node verbatim.
 
-```sh
+```bash
 nub --max-old-space-size=4096 build.ts
 nub --import ./instrument.js server.ts
 nub script.ts --port 3000 --verbose   # everything after the file is your script's argv
@@ -33,7 +33,7 @@ nub script.ts --port 3000 --verbose   # everything after the file is your script
 
 Read a program from stdin the same way `node -` does:
 
-```sh
+```bash
 echo 'console.log(1 + 1)' | nub -
 nub - < script.js
 ```
@@ -42,7 +42,7 @@ nub - < script.js
 
 The inspector flags pass straight through to Node, and because Nub emits inline source maps your breakpoints land in the `.ts` source, not the transpiled output.
 
-```sh
+```bash
 nub --inspect server.ts        # attach a debugger to the running process
 nub --inspect-brk server.ts    # break before the first line and wait for a debugger
 ```
@@ -149,7 +149,7 @@ Nub walks up to the nearest `tsconfig.json`, follows `extends` chains, and honor
 
 Nub emits inline source maps and turns on `--enable-source-maps`, so uncaught errors and `console.trace()` print frames that point at your original TypeScript source and line numbers — not the transpiled JS. It's on by default; there's no flag to remember.
 
-```sh
+```bash
 nub app.ts   # a throw inside app.ts reports app.ts:N, not the generated output
 ```
 
@@ -159,7 +159,7 @@ If you ever want it off, pass `--no-enable-source-maps`.
 
 Files ending in `.jsx` and `.tsx` execute directly through the same load hook. JSX is recognized in `.jsx` / `.tsx` only, never in plain `.js`. The defaults are the modern ones — automatic runtime, `react` as the import source — matching oxc-transformer, Vite's React plugins, Rolldown, and Bun, so a React project needs no setup.
 
-```sh
+```bash
 nub render.tsx
 ```
 
@@ -206,7 +206,7 @@ Nub reads your `.env*` files and injects them into the environment *before* Node
 
 The load order, highest priority first: the shell env (always wins), then `.env.[NODE_ENV].local`, `.env.local`, `.env.[NODE_ENV]`, and `.env`. So with `NODE_ENV=production` set, `.env.production` is read; `.env.local` is intentionally skipped under `NODE_ENV=test` so developer-machine secrets don't leak into the test suite.
 
-```sh
+```bash
 NODE_ENV=production nub server.ts   # reads .env.production then .env
 ```
 
@@ -214,7 +214,7 @@ NODE_ENV=production nub server.ts   # reads .env.production then .env
 
 Values support `${VAR}` and `$VAR` expansion, including nested references with cycle detection. Undefined variables expand to the empty string.
 
-```sh
+```bash
 # .env
 HOST=localhost
 PORT=5432
@@ -263,7 +263,7 @@ Nub doesn't ship a Node runtime — it runs your code on stock Node. It resolves
 
 Pin a version in `.node-version` or `.nvmrc`. If that Node is already on your machine (on `PATH` or previously fetched), Nub uses it; if not, it downloads the matching stock build straight from nodejs.org — SHA-256 verified, cached under `~/.cache/nub/node`, and run in the same breath. No `nvm use`, no prompt.
 
-```sh
+```console
 $ cat .nvmrc
 22.15.0
 
@@ -280,7 +280,7 @@ The first run installs in a couple of seconds (progress on stderr; stdout is nev
 
 With no pin file, Nub adopts whatever `node` is on your `PATH`. Switch Node with `nvm`, `mise`, `fnm`, `brew`, or the official installer, and Nub picks up the active one. Upgrading Nub never changes your Node version, and upgrading Node never changes your Nub.
 
-```sh
+```bash
 nvm use 24
 nub node which          # prints the resolved Node binary Nub will spawn
 ```
@@ -289,6 +289,6 @@ Augmented modes require **Node 18.19+** (Node 18 LTS). Below that, augmented com
 
 There's also no Nub verb for "plain Node" — just type `node`. The PATH shim Nub uses to augment child `node` calls is per-invocation, scoped to descendants of a `nub ...` call, so your shell's `node` is always your real, unaugmented Node.
 
-```sh
+```bash
 node script.js          # your real Node, no augmentation
 ```

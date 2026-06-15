@@ -5,13 +5,13 @@ description: Restart-on-change for files and scripts, driven by the resolved dep
 
 Watch mode (`nub watch`) runs your entry point and restarts it whenever something it actually depends on changes. The engine underneath is Node's own `--watch`, with Nub-side glue that reports the in-memory-transpiled dependency graph — plus the off-graph files that still invalidate a process — back to Node's watcher. The result is a watcher that Just Works for TypeScript projects, with no glob list to maintain.
 
-This page is a cookbook. For how `nub` runs files in the first place, see [Running files](/docs/files); for scripts, [Running scripts](/docs/run).
+This page is a cookbook. For how `nub` runs files in the first place, see [Running files](/docs/runtime); for scripts, [Running scripts](/docs/run).
 
 ## Watch and restart a file
 
 Point `nub watch` at an entry file. It runs the file, then restarts the process on any change to the file or anything in its resolved import graph.
 
-```sh
+```bash
 nub watch src/server.ts
 ```
 
@@ -21,7 +21,7 @@ TypeScript, JSX, `.env*` loading, `tsconfig.json` paths — everything `nub <fil
 
 Flag and subcommand are aliases: `nub --watch <file>` dispatches to the exact same code path as `nub watch <file>` — same defaults, same behavior. The flag form exists so `node --watch script.ts` muscle memory lands in Nub's improved experience without surprise.
 
-```sh
+```bash
 nub --watch src/server.ts
 ```
 
@@ -29,7 +29,7 @@ nub --watch src/server.ts
 
 The watcher takes a file, not a script: point `nub watch` at the entry your `dev` script runs.
 
-```sh
+```bash
 nub watch src/server.ts
 ```
 
@@ -39,14 +39,14 @@ A `--watch` placed after a script name is forwarded *to the script* like any oth
 
 Nub preserves terminal output by default and prints a restart banner, rather than clearing the screen. The previous run's error message is usually the most important thing on screen, so wiping it on every restart is the wrong default.
 
-```sh
+```bash
 nub watch src/server.ts
 # ── restart [14:32:08] ──
 ```
 
 If you prefer Node's clear-on-restart behavior, opt in:
 
-```sh
+```bash
 nub watch --clear src/server.ts
 ```
 
@@ -65,7 +65,7 @@ This is why a plain `node --watch` silently goes stale on a tsconfig edit, and w
 
 Because the watch set is the import graph rather than a directory glob, files that nothing in the run actually loads are simply not watched. A rebuild that emits `dist/foo.js` doesn't trigger a restart unless something in the run imported `dist/foo.js`.
 
-```sh
+```bash
 nub watch src/server.ts
 # editing dist/** or coverage/** does not restart —
 # they aren't in the loaded dependency graph
@@ -77,7 +77,7 @@ There is no ignore list to maintain. Most of the `ignore` / restart-loop-guard h
 
 Nub's watch mode is intentionally not byte-for-byte Node — it adds the banner, preserve-output default, and off-graph reporting described above. When you want vanilla Node `--watch` with no Nub-side glue at all, type `node --watch` directly in your shell.
 
-```sh
+```bash
 node --watch script.js
 ```
 
@@ -85,7 +85,7 @@ Nub's PATH shim is per-invocation: it only affects descendants of an active `nub
 
 ## Related
 
-- [Running files](/docs/files) — how `nub <file>` executes TypeScript and JSX.
+- [Running files](/docs/runtime) — how `nub <file>` executes TypeScript and JSX.
 - [Running scripts](/docs/run) — `nub run` and its workspace surface.
 - [nubx](/docs/nubx) — running local CLIs from `node_modules/.bin`.
 - [FAQ](/docs/faq) — short answers across the whole surface.

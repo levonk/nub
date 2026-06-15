@@ -1,5 +1,5 @@
 ---
-title: Introducing Nub — an all-in-one toolkit for Node.js
+title: "Introducing Nub: an all-in-one toolkit for Node.js"
 description: A Rust CLI that augments the Node you already have — TypeScript that just runs, a faster script runner, and a fast bin runner. It augments Node.js instead of trying to replace it.
 author: The Nub Team
 date: 2026-05-30
@@ -7,7 +7,7 @@ date: 2026-05-30
 
 Nub is an all-in-one toolkit powered by Node.js that **modernizes** the developer experience of the Node.js ecosystem. Use it instead of `node`, `npm run`, and `npx` (or the equivalents in your preferred package manager).
 
-```sh
+```console
 $ npm i -g @nubjs/nub
 $ nub index.ts             # run a TypeScript file
 $ nub run dev              # run a package.json script
@@ -33,7 +33,7 @@ Bun and Deno proved there's enormous appetite for an all-in-one toolkit that rep
 
 Nub embraces it instead. It's a single Rust binary that transpiles your code and executes it on the stock `node` your project pins — so it passes Node's own test suite, because the runtime underneath *is* Node: 99.3% of the full corpus. It combines:
 
-```sh
+```console
 $ nub index.ts             # file runner — full TypeScript, on stock Node
 $ nub run build            # script runner — 25× faster than pnpm run
 $ nubx prisma generate     # bin runner — 20× faster than npx
@@ -42,11 +42,11 @@ $ nub install              # package manager — pnpm-compatible, your lockfile
 $ nub node install 26      # version manager — installs Node on demand
 ```
 
-## `nub <file>` — a TypeScript-first Node.js
+## `nub <file>`: a TypeScript-first Node.js
 
 The top-level command runs files. It's a true drop-in replacement for `node` — same flags, same argv, same runtime behavior:
 
-```sh
+```console
 $ nub \
     --max-old-space-size=4096 \
     --inspect \
@@ -156,7 +156,7 @@ import { host, port } from "./config.yaml" // named exports
 
 Nub loads `.env`, `.env.local`, `.env.<NODE_ENV>`, and `.env.<NODE_ENV>.local` automatically — Vite/Bun precedence rules, `${VAR}` expansion included — and injects them before Node starts. One deliberate exception: `.env.local` is skipped under `NODE_ENV=test`, following the Next.js convention, so local secrets don't leak into your test suite.
 
-```sh
+```console
 # .env
 APP=acme
 DATABASE_URL=postgres://localhost/${APP}_dev
@@ -169,7 +169,7 @@ $ nub server.ts
 
 Nub resolves the right Node for every project implicitly — from `.node-version`, `.nvmrc`, or `package.json#engines` — every time it runs a file. If that version isn't installed, it's downloaded from nodejs.org (checksum-verified, cached under `~/.cache/nub`) and your code runs on it. No pin? The `node` on your `PATH` is used, however you manage it. It's the [uv](https://docs.astral.sh/uv/) experience, for Node.
 
-```sh
+```console
 $ echo 26 > .node-version
 $ nub hello.ts
 Using Node.js 26.3.0 (resolved from .node-version)
@@ -180,7 +180,7 @@ Hello world!
 
 The explicit commands exist too — no shell hooks, no `PATH` munging:
 
-```sh
+```bash
 nub node install 26     # install a version
 nub node ls             # what's installed
 nub node pin 26         # write .node-version
@@ -305,11 +305,11 @@ Finished TC39 methods — native on Node 24+, polyfilled on older lines, each on
 - [`Promise.try`](https://github.com/tc39/proposal-promise-try) — start a chain from a sync-or-async function.
 - [`Float16Array`](https://github.com/tc39/proposal-float16array) — plus `DataView.getFloat16` / `setFloat16` and `Math.f16round`. One real caveat: the polyfill is ~3× slower than V8's hardware-FP16 path, so pin Node 24+ for ML-inference hot loops.
 
-## `nub watch` — built-in watch mode
+## `nub watch`: built-in watch mode
 
 Restart on change — driven by the actual dependency graph, not a glob list:
 
-```sh
+```console
 $ nub watch src/server.ts
 Listening on http://localhost:3000
 
@@ -321,11 +321,11 @@ The watch set is the resolved dependency graph of your entry file, plus the file
 
 The engine underneath is Node's own `--watch`. Nub's preload reports every file the load hook touches — including `.ts` files transpiled in memory, which Node never sees on disk — to Node's watcher over its dependency-report IPC channel. That report is what makes `--watch` work for TypeScript at all.
 
-## `nub run` — a 25× faster `pnpm run`
+## `nub run`: a 25× faster `pnpm run`
 
 A drop-in replacement for `npm run` and `pnpm run`, minus the JS startup these Node-based tools pay on every invocation:
 
-```sh
+```console
 $ nub run dev           # any package.json script
 $ nub run test --watch  # trailing flags pass through — no -- separator
 $ nub -r run build      # every workspace package, topo-ordered
@@ -353,9 +353,9 @@ The benchmarked script is identical on every row — the delta is pure wrapper o
 
 ### Workspace-aware
 
-Nub reads workspace topology from `package.json#workspaces` (npm, yarn) and `pnpm-workspace.yaml` (pnpm), and lifts pnpm's `--filter` selector grammar verbatim — the most expressive of any package manager. The rest of the workspace flag surface comes along with it, npm spellings accepted as aliases, and packages always run in dependency order:
+Nub reads workspace topology from `package.json#workspaces` (npm, Yarn) and `pnpm-workspace.yaml` (pnpm), and lifts pnpm's `--filter` selector grammar verbatim — the most expressive of any package manager. The rest of the workspace flag surface comes along with it, npm spellings accepted as aliases, and packages always run in dependency order:
 
-```sh
+```bash
 nub -r run build                  # all packages, topo-ordered
 nub --filter @org/api dev         # one package by name
 nub --filter "./packages/*" test  # glob match
@@ -375,15 +375,15 @@ Everything your scripts depend on still works: the `npm_*` env vars, `pre` / `po
 
 When `nub run` executes a script, `nub` is aliased as `node` for the duration — so spawned subprocesses (say, a CLI with a `node` shebang) get the augmentation too. Pass `--node` to turn this off:
 
-```sh
+```bash
 nub run --node test
 ```
 
-## `nubx` — a 20× faster `npx`
+## `nubx`: a 20× faster `npx`
 
 Run any CLI your dependencies ship into `node_modules/.bin`, no matter which package manager put it there:
 
-```sh
+```bash
 nubx eslint .
 nubx prisma generate
 nubx tsc --noEmit
@@ -403,20 +403,20 @@ The `.bin` walk-up happens in Rust and the binary is exec'd directly — no Node
   ]}
 />
 
-## `nub install` — a 10× faster `pnpm install`
+## `nub install`: a 10× faster `pnpm install`
 
 Nub ships a full package manager, powered by the embedded [aube](https://github.com/jdx/aube) engine, built by [jdx](https://github.com/jdx), the creator of mise. Two guarantees define it.
 
 First, whatever lockfile your project already has is respected bidirectionally — Nub reads it and writes it back in the same format. No migration, no foreign lockfile dropped beside yours:
 
-```sh
+```console
 $ nub install   # pnpm-lock.yaml → read, written back
 $ nub install   # package-lock.json → read, written back
 $ nub install   # bun.lock → read, written back
 $ nub install   # yarn.lock → read-only (installed from, never rewritten)
 ```
 
-The npm, pnpm, and bun lockfiles round-trip; yarn is read-only. Run nub and your old package manager side by side — same file, switch back any time.
+The npm, pnpm, and Bun lockfiles round-trip; Yarn is read-only. Run Nub and your old package manager side by side — same file, switch back any time.
 
 Second, on a pnpm project, support is complete: nub reads and honors every config surface pnpm does — `pnpm-workspace.yaml`, `.pnpmfile.cjs`, the `"pnpm"` package.json section, the `npm_config_*` environment — so the install it produces is one real pnpm accepts unchanged.
 
@@ -449,18 +449,18 @@ Nub install ships the strongest default security posture of any Node package man
 
 One `paranoid: true` line turns every soft gate into a hard failure and adds a build-script jail — approved scripts then run sandboxed, with no network and a scoped filesystem.
 
-## `nub pm` — a baked-in, native-speed Corepack
+## `nub pm`: a baked-in, native-speed Corepack
 
 Run `nub pm shim` once and it drops `npm`, `pnpm`, `yarn`, and `bun` onto your PATH as shims. From then on, running `pnpm install` in a project reads the version that project pins in `packageManager`, provisions that exact version (fetched and verified from the registry), and execs it — corepack's job, but in Rust, with none of the per-call Node bootstrap corepack pays:
 
-```sh
+```console
 $ nub pm shim    # install npm / pnpm / yarn / bun shims
 $ pnpm install   # routes to the pnpm the project pins, fetching it if missing
 ```
 
 To set or change the pinned manager by hand, `nub pm use` resolves the version, verifies the tarball, writes `packageManager` (with a `+sha512` hash), and aligns the lockfile — converting formats when you switch managers:
 
-```sh
+```console
 $ nub pm use pnpm@^9
 using pnpm@9.15.9
   package.json: packageManager = pnpm@9.15.9 (+sha512)

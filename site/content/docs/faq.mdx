@@ -7,7 +7,7 @@ description: The short, indexed answers to common questions about Nub — what i
 
 Nub is an all-in-one toolkit powered by Node.js that modernizes the developer experience in the Node.js ecosystem. Use it to run files, `package.json` scripts, and locally installed CLIs. Use it instead of `node`, `npm run`, and `npx` (or the equivalents in your preferred package manager).
 
-```sh
+```console
 $ npm i -g @nubjs/nub
 $ nub index.ts             # run a TypeScript file
 $ nub run dev              # run a package.json script
@@ -84,7 +84,7 @@ Yes — Linux (x64, arm64), macOS (x64, arm64), Windows (x64). Same platforms th
 
 It can — `nub install` is a full package manager, powered by the embedded aube engine — pnpm's CLI surface, your project's lockfile. It detects the lockfile your project already has and writes the same format back: `pnpm-lock.yaml`, `package-lock.json`, and `bun.lock` round-trip in place, never replaced with a foreign file (`yarn.lock` is honored read-only — an install that would rewrite it is refused, with the exact yarn command to run instead).
 
-Because Nub writes the same lockfile your package manager does, nothing forces a migration: pnpm, npm, and bun keep working side by side — run either tool, commit the same file, switch back any time. And when you want the original tool itself, `nub pm use` provisions the exact pinned version — corepack's job, without the PATH shims.
+Because Nub writes the same lockfile your package manager does, nothing forces a migration: pnpm, npm, and Bun keep working side by side — run either tool, commit the same file, switch back any time. And when you want the original tool itself, `nub pm use` provisions the exact pinned version — corepack's job, without the PATH shims.
 
 ## Does it work with `pnpm` / `npm` / `yarn` / `bun`?
 
@@ -96,7 +96,7 @@ One Yarn-specific caveat: Yarn Berry's Plug'n'Play mode replaces `node_modules/.
 
 Yes. Workspace topology comes from `package.json`'s `"workspaces"` field (`npm`, `yarn`) and `pnpm-workspace.yaml` (`pnpm`), with the `-r` / `--filter` semantics every workspace user already knows from `pnpm`:
 
-```sh
+```bash
 nub run -r build                        # all workspace packages
 nub run --filter @org/api dev           # one package by name
 nub run --filter "./packages/*" test    # glob match
@@ -111,7 +111,7 @@ Yes — `nubx` (also available as `nub exec`) is the equivalent. Locally install
 
 ## Does it replace `tsx` / `ts-node`?
 
-Yes — `nub script.ts` runs TypeScript directly, with the full TS surface (not just type stripping), respecting your `tsconfig.json`, with inline source maps so stack traces point at your `.ts` source. Full details: [File runner → TypeScript](/docs/files#typescript).
+Yes — `nub script.ts` runs TypeScript directly, with the full TS surface (not just type stripping), respecting your `tsconfig.json`, with inline source maps so stack traces point at your `.ts` source. Full details: [File runner → TypeScript](/docs/runtime#typescript).
 
 ## Why not just use Node's built-in TypeScript support?
 
@@ -130,7 +130,7 @@ For restart-on-change, yes: `nub watch script.ts` (or `nub --watch script.ts`) r
 
 ## What about `dotenv-cli`?
 
-Not needed. Nub loads `.env`, `.env.local`, `.env.<NODE_ENV>`, and `.env.<NODE_ENV>.local` automatically — with the Vite/Bun-style precedence rules — and injects them into the process environment *before* Node starts. Expansion of `${VAR}` and `$VAR` is supported, including nested references and cycle detection. Under `NODE_ENV=test`, `.env.local` is intentionally skipped, following the Next.js convention — local secrets shouldn't leak into your test suite. Full details: [File runner → Environment variables](/docs/files#environment-variables).
+Not needed. Nub loads `.env`, `.env.local`, `.env.<NODE_ENV>`, and `.env.<NODE_ENV>.local` automatically — with the Vite/Bun-style precedence rules — and injects them into the process environment *before* Node starts. Expansion of `${VAR}` and `$VAR` is supported, including nested references and cycle detection. Under `NODE_ENV=test`, `.env.local` is intentionally skipped, following the Next.js convention — local secrets shouldn't leak into your test suite. Full details: [File runner → Environment variables](/docs/runtime#environment-variables).
 
 ## How does it work under the hood?
 
@@ -231,7 +231,7 @@ If Nub disappeared tomorrow, the worst case is: TypeScript files need a separate
 
 A compat flag on `nub run` and `nubx`. It disables Nub's runtime augmentation for that orchestration call while keeping the CLI work (workspace, scripts, `npm_*` env, lifecycle hooks).
 
-```sh
+```bash
 node script.js                # plain Node, full stop (shim is per-invocation, shell `node` is always your real Node)
 nub script.js                 # Nub augmentation active
 nub run --node test           # Nub's CLI orchestration, runtime augmentation off
@@ -252,7 +252,7 @@ No. Nub reads `tsconfig.json` the way `tsc` does — `paths`, `baseUrl`, `extend
 
 ## How do I install Nub?
 
-```sh
+```bash
 npm install -g @nubjs/nub
 ```
 
@@ -260,7 +260,7 @@ That installs the Rust binary (via the usual `@<scope>/<platform-arch>` npm dist
 
 ## How do I upgrade?
 
-```sh
+```bash
 npm install -g @nubjs/nub@latest
 ```
 

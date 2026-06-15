@@ -5,7 +5,7 @@ description: Provision and run the package manager your project pins — corepac
 
 Nub reads your project's package-manager pin, downloads that exact version from the npm registry — integrity-verified before extraction, cached under `~/.cache/nub/pm` — and runs it under the project's Node. No corepack, no `enable` step, no baked version table: a nub binary from six months ago provisions today's pnpm.
 
-```sh
+```console
 $ nub pm which
 /Users/you/.cache/nub/pm/pnpm/9.15.4/package/bin/pnpm.cjs
 » resolved from packageManager (pnpm@9.15.4)
@@ -19,7 +19,7 @@ The pinned package manager resolves from three sources, in order:
 2. **`package.json#packageManager`** — `name@x.y.z`, optionally `+sha512.<hash>`. The corepack field; Nub is contract-compatible with it.
 3. **`package.json#devEngines.packageManager`** — `{ name, version }`, where `version` may be a range.
 
-Pins are read at the workspace root. The `packageManager` field must be exact — the entire ecosystem enforces this (corepack, pnpm, yarn all reject ranges there); ranges belong in `devEngines`. With no pin, there's nothing to manage — `nub pm which` says so and points at [`nub pm use`](#nub-pm-use).
+Pins are read at the workspace root. The `packageManager` field must be exact — the entire ecosystem enforces this (corepack, pnpm, Yarn all reject ranges there); ranges belong in `devEngines`. With no pin, there's nothing to manage — `nub pm which` says so and points at [`nub pm use`](#nub-pm-use).
 
 <Callout title="Yarn Berry">
 Yarn 2+ ships as a release committed to your repo (`.yarnrc.yml` `yarnPath`) — Nub runs that file directly and doesn't provision Berry: a `yarn@2+` pin without a committed release is an error. Yarn classic (1.x) provisions like any other package manager.
@@ -29,7 +29,7 @@ Yarn 2+ ships as a release committed to your repo (`.yarnrc.yml` `yarnPath`) —
 
 Print the resolved package manager — path on stdout, provenance on stderr, so `PM=$(nub pm which)` captures just the path. Provisions the pinned version if it isn't cached yet.
 
-```sh
+```console
 $ nub pm which
 /Users/you/.cache/nub/pm/pnpm/9.15.4/package/bin/pnpm.cjs
 » resolved from packageManager (pnpm@9.15.4)
@@ -37,9 +37,9 @@ $ nub pm which
 
 ## `nub pm use`
 
-Declare the project's package manager — npm, pnpm, yarn, or bun. One command sets the identity and makes the artifacts agree: it resolves the version (exact, range, or dist-tag; bare means `latest`), fetches and verifies it, writes `packageManager`, and aligns the lockfile.
+Declare the project's package manager — npm, pnpm, Yarn, or Bun. One command sets the identity and makes the artifacts agree: it resolves the version (exact, range, or dist-tag; bare means `latest`), fetches and verifies it, writes `packageManager`, and aligns the lockfile.
 
-```sh
+```bash
 nub pm use pnpm           # newest pnpm
 nub pm use npm@10         # newest 10.x
 nub pm use pnpm@9.15.4    # exact
@@ -47,7 +47,7 @@ nub pm use pnpm@9.15.4    # exact
 
 Moving an npm project to pnpm:
 
-```sh
+```console
 $ nub pm use pnpm
 Fetching pnpm 11.5.3 (4 MB)...
 using pnpm@11.5.3
@@ -69,7 +69,7 @@ Every file written or removed is named in the output; rerunning is a no-op. Two 
 
 Bump the pin: resolve the newest version satisfying the `devEngines` range (or the registry `latest` if there's no range), provision it, and rewrite `packageManager` with a fresh hash. Alias: `nub pm up`.
 
-```sh
+```console
 $ nub pm update
 Fetching pnpm 9.15.9 (4 MB)...
 updated pnpm 9.15.4 → 9.15.9
@@ -79,7 +79,7 @@ updated pnpm 9.15.4 → 9.15.9
 
 Inspect or clear the package-manager cache.
 
-```sh
+```console
 $ nub pm cache
 pnpm@9.15.4
 yarn@1.22.22
@@ -103,7 +103,7 @@ To fetch package managers from a different registry than your dependencies, `COR
 
 Make **bare** `npm` / `pnpm` / `yarn` commands (plus `npx`, `pnpx`, `yarnpkg`) use the project's pinned package manager — typed from muscle memory, or spawned by tools you don't control. This is what `corepack enable` does, without the corepack tax: each shim *is* the nub binary (a hardlink), so deciding which PM to run costs zero Node boots.
 
-```sh
+```console
 $ nub pm shim
 created 7 shims in ~/.nub/shims
 added PATH entry to ~/.zshrc — restart your shell or: source ~/.zshrc
@@ -123,7 +123,7 @@ The shim never writes to your `package.json`. Re-run `nub pm shim` after upgradi
 
 Remove the shims and the `PATH` entry. Works even after the nub binary itself has been uninstalled — the shim directory carries its own copy for exactly this cleanup.
 
-```sh
+```console
 $ nub pm unshim
 removed ~/.nub/shims · PATH entry stripped from ~/.zshrc
 ```

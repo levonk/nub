@@ -5,13 +5,13 @@ description: Use nubx (or nub exec) to run the CLIs in your project's node_modul
 
 The `nubx` command runs the command-line tools your project already depends on — the ones installed into `node_modules/.bin` by `pnpm`, `npm`, `yarn`, or `bun`. It's a drop-in for `npx` and `pnpm exec`: it does the `node_modules/.bin` walk-up in Rust and exec's the resolved binary directly, so the wrapper overhead that `npx` and `pnpm exec` pay on every call (a full Node bootstrap) approximately disappears — `~17–20×` lighter on a native CLI like `esbuild`. The tool that actually runs is identical to what `npx` would run; only the wrapper gets out of the way.
 
-This page is task-oriented. For the bigger picture see the [Introduction](/docs); for running files and scripts see [running files](/docs/files) and [running scripts](/docs/run).
+This page is task-oriented. For the bigger picture see the [Introduction](/docs); for running files and scripts see [running files](/docs/runtime) and [running scripts](/docs/run).
 
 ## Run a local CLI
 
 Point `nubx` at the bin name and let it resolve from `node_modules/.bin`. No `node` bootstrap in the wrapper, so resolution returns in single-digit milliseconds.
 
-```sh
+```bash
 nubx eslint .
 nubx prisma generate
 nubx tsc
@@ -21,7 +21,7 @@ nubx tsc
 
 Everything after the bin name goes straight to the underlying tool, untouched. There is no `--` separator to remember — `nubx` doesn't interpret your tool's flags.
 
-```sh
+```bash
 nubx eslint . --fix --max-warnings 0
 nubx tsc --noEmit
 nubx prisma migrate dev --name init
@@ -32,7 +32,7 @@ nubx vitest run --coverage
 
 Though `nubx` is a separate binary entry point, it's an exact alias for `nub exec` — same code path, same resolution, same behavior. Use whichever reads better in your context; `nubx` is shorter for the command line and shebangs, `nub exec` is natural inside a longer `nub` invocation.
 
-```sh
+```bash
 nubx prettier --write .
 nub exec prettier --write .   # identical
 ```
@@ -41,7 +41,7 @@ nub exec prettier --write .   # identical
 
 Resolution walks `node_modules/.bin/<name>` starting from your current directory and moving upward through ancestor `node_modules/.bin` directories — the same chain `nub run` builds for `PATH`. In a monorepo that means the package member's own `.bin` is checked first, then the workspace root, then any further ancestors. This matches how `npm`, `pnpm`, `yarn`, and `bun` resolve bins, so a tool installed at the workspace root is reachable from any member.
 
-```sh
+```bash
 # from packages/api in a monorepo:
 #   1. packages/api/node_modules/.bin/<name>
 #   2. <workspace-root>/node_modules/.bin/<name>
@@ -55,7 +55,7 @@ The resolved entry runs the right way for what it is: a Node script (a `#!…nod
 
 By default `nubx` runs the tool under Nub's augmentation — the PATH shim makes any `node` the tool spawns resolve back to Nub, with TypeScript transpilation and polyfills active. Pass `--node` to turn that off for the invocation: the bin's `#!/usr/bin/env node` shebang resolves to your real Node binary, no `--import` preload is added, and no experimental flags are injected. Reach for it when a tool's shebang chain needs byte-exact plain Node, when you're bisecting a Nub-vs-Node issue, or when CI wants exact Node runtime behavior with `nubx`'s resolution.
 
-```sh
+```bash
 nubx --node prisma generate
 nub exec --node tsc --noEmit
 ```
@@ -66,7 +66,7 @@ What still happens under `--node`: the workspace-aware `node_modules/.bin` walk-
 
 Already-installed bins are the whole scope — `nubx` does not fetch from the registry. If the bin isn't on the `node_modules/.bin` chain, `nubx` exits non-zero and prints a one-line suggestion. It detects your package manager from the nearest lockfile (`pnpm-lock.yaml` → `yarn.lock` → `bun.lock` → `package-lock.json`, falling back to a `$PATH` priority of `pnpm > yarn > bun > npm`) and points you at that PM's own dlx/exec verb — so installs and ad-hoc fetches stay in the tool that owns your lockfile, keeping it consistent.
 
-```sh
+```console
 $ nubx prettier
 nubx: prettier is not installed locally.
       Install it (pnpm add -D prettier) or run it ad-hoc with:
@@ -79,7 +79,7 @@ The suggestion is printed, never run — you copy the command. The exact suggest
 
 Version specifiers like `nubx prettier@3.5` are accepted, but they always miss the local-bin lookup — `nubx` doesn't match against installed versions. You'll get the not-installed message. Install the version you want, or run your PM's dlx verb directly.
 
-```sh
+```bash
 pnpm add -D prettier@3.5    # then: nubx prettier
 pnpm dlx prettier@3.5       # ad-hoc, no install
 ```
@@ -95,7 +95,7 @@ nodeLinker: node-modules
 
 ## Related
 
-- [Running files](/docs/files) — `nub index.ts`, TypeScript-first execution.
+- [Running files](/docs/runtime) — `nub index.ts`, TypeScript-first execution.
 - [Running scripts](/docs/run) — `nub run`, the workspace-aware script runner that shares the `.bin` resolution chain.
 - [Watch mode](/docs/watch) — `nub watch`, restart on change.
 - [FAQ](/docs/faq) — short answers, including the `--node` flag and the Yarn PnP caveat.
