@@ -13,6 +13,8 @@ $ nub index.ts             # run a TypeScript file
 $ nub run dev              # run a package.json script
 $ nub watch src/server.ts  # restart on file changes
 $ nubx prisma generate     # run a CLI from node_modules/.bin
+$ nub install              # install dependencies, pnpm-compatible
+$ nub pm shim              # Corepack-style package-manager shims
 $ nub node install 26      # manage Node.js versions
 ```
 
@@ -35,8 +37,8 @@ Nub embraces it instead. It's a single Rust binary that transpiles your code and
 
 ```console
 $ nub index.ts             # file runner — full TypeScript, on stock Node
-$ nub run build            # script runner — 25× faster than pnpm run
-$ nubx prisma generate     # bin runner — 20× faster than npx
+$ nub run build            # script runner — 24× faster than pnpm run
+$ nubx prisma generate     # bin runner — 19× faster than npx
 $ nub watch src/server.ts  # watcher — driven by the dependency graph
 $ nub install              # package manager — pnpm-compatible, your lockfile
 $ nub node install 26      # version manager — installs Node on demand
@@ -321,7 +323,7 @@ The watch set is the resolved dependency graph of your entry file, plus the file
 
 The engine underneath is Node's own `--watch`. Nub's preload reports every file the load hook touches — including `.ts` files transpiled in memory, which Node never sees on disk — to Node's watcher over its dependency-report IPC channel. That report is what makes `--watch` work for TypeScript at all.
 
-## `nub run`: a 25× faster `pnpm run`
+## `nub run`: a 24× faster `pnpm run`
 
 A drop-in replacement for `npm run` and `pnpm run`, minus the JS startup these Node-based tools pay on every invocation:
 
@@ -379,7 +381,7 @@ When `nub run` executes a script, `nub` is aliased as `node` for the duration �
 nub run --node test
 ```
 
-## `nubx`: a 20× faster `npx`
+## `nubx`: a 19× faster `npx`
 
 Run any CLI your dependencies ship into `node_modules/.bin`, no matter which package manager put it there:
 

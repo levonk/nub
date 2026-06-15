@@ -48,7 +48,7 @@ If you've spent the last few years assembling a personal toolchain out of `tsx`,
 
 ## Is it faster than Node.js?
 
-No — your code runs in Node itself, so once it's executing, V8 is V8. What's dramatically faster is the CLI surface: `nub run` is 25× faster than `pnpm run` and `nubx` is 20× faster than `npx` on cold start, because those tools pay a full Node bootstrap to do what amounts to a script lookup, and Nub — a native Rust binary — doesn't. Transpile output lands in a content-addressed on-disk cache keyed on `(source content, Nub version, resolved tsconfig)`, so the first run transpiles and every run after pays roughly nothing.
+No — your code runs in Node itself, so once it's executing, V8 is V8. What's dramatically faster is the CLI surface: `nub run` is 24× faster than `pnpm run` and `nubx` is 19× faster than `npx` on cold start, because those tools pay a full Node bootstrap to do what amounts to a script lookup, and Nub — a native Rust binary — doesn't. Transpile output lands in a content-addressed on-disk cache keyed on `(source content, Nub version, resolved tsconfig)`, so the first run transpiles and every run after pays roughly nothing.
 
 ## Will my existing Node code work on Nub?
 

@@ -56,7 +56,7 @@ const buildPieces = (node: NodeVersion): {
     accent: 'acid',
     command: 'nub run',
     label: 'Script runner',
-    title: 'A 25× faster pnpm run',
+    title: 'A 24× faster pnpm run',
     blurb: (
       <>
         A drop-in for <Mono>npm run</Mono> and <Mono>pnpm run</Mono> with lifecycle hooks, env
@@ -75,7 +75,7 @@ const buildPieces = (node: NodeVersion): {
     accent: 'sky',
     command: 'nubx',
     label: 'Package runner',
-    title: 'A 20× faster npx',
+    title: 'A 19× faster npx',
     blurb: (
       <>
         Resolves <Mono>node_modules/.bin</Mono> in Rust and execs the binary directly — no
