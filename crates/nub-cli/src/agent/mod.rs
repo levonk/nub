@@ -119,9 +119,7 @@ fn run_docs(args: &[String]) -> Result<i32> {
         println!();
     }
     println!(
-        "---\n\nFetch any page's full markdown with `nub agent docs --page <path>` — \
-         every path in the list above, and every markdown link target inside the pages \
-         (e.g. `](/docs/runtime/decorators)`), is a valid argument."
+        "---\n\nFetch a page's full markdown, e.g.:\n\n    nub agent docs --page /docs/runtime/decorators"
     );
     Ok(0)
 }
