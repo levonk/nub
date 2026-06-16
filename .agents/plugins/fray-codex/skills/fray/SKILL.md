@@ -31,9 +31,12 @@ Use the output to reconcile returned agents, surface pending questions, and choo
 
 Thread frontmatter must include `title` and `status`. Status vocabulary is:
 
-`todo`, `active`, `blocked`, `needs-decision`, `done`, `dismissed`.
+`todo`, `enqueued`, `active`, `blocked`, `needs-decision`, `done`, `dismissed`.
 
-`done` and `dismissed` are terminal and kept. Never delete terminal threads just to reduce board noise.
+- `enqueued` means ready to run, fully scoped, and deliberately held until a named in-flight agent/thread completes. This is a sequencing dependency, not a human gate. Use it when the next dispatch would edit the same files an in-flight agent owns, or when it genuinely needs that agent's output. `## Next step` must name what it is waiting on, and when that agent returns, dispatch or resume the enqueued work in the same turn.
+- In Codex, prefer `multi_agent_v1.send_input` when the follow-up clearly belongs inside an existing live agent's scope and can be delivered safely. Use `enqueued` when the follow-up is a distinct thread, needs canonical board visibility, or should run only after the current agent returns.
+- `blocked` means waiting on a human, external event, or unresolved decision with no in-session trigger.
+- `done` and `dismissed` are terminal and kept. Never delete terminal threads just to reduce board noise.
 
 Each thread body must keep these sections, in this order:
 
@@ -59,6 +62,19 @@ Create `.fray/<slug>.md` first, before dispatching or doing substantial work, wh
 One-shots do not need a file. Put loose cross-cutting one-offs in `.fray/backlog.md`.
 
 Research and implementation stay in one thread. Retool the same file in place when research turns into build work.
+
+## User Asks Are Additive
+
+Every user ask is additive. A new request joins the existing queue; it does not supersede, deprioritize, or replace earlier asks unless the human explicitly says to stop or replace them.
+
+When a new ask lands mid-work:
+
+- capture it immediately in a thread or in the owning thread's `## Steps / follow-up queue`,
+- dispatch or advance it in parallel when independent,
+- use `enqueued` only for a real file/dependency conflict with a named in-flight agent/thread,
+- also continue reconciling and advancing earlier asks in the same turn.
+
+Before replying, re-read the current pending list and recent user messages and verify no user ask has evaporated.
 
 ## Write Ownership
 
@@ -108,6 +124,7 @@ At the top of every Fray turn, fold returned agents before answering new convers
 - move settled calls into `## Decisions`,
 - keep only unresolved items in `## Open questions`,
 - drain queued follow-ups in `## Steps / follow-up queue`,
+- dispatch or resume `enqueued` work whose named dependency just returned,
 - update `## Next step`,
 - mark the ledger entry reconciled when you have folded it.
 
