@@ -1,0 +1,66 @@
+---
+title: Package-manager shims
+description: An opt-in for muscle memory. Install the shims and a bare pnpm, npm, or yarn command routes through Nub to the package manager your project pins, with no extra Node process in front of the install.
+---
+
+Default Nub usage needs no shims: `nub install`, `nub add`, and `nub run` already provision and run the package manager your project pins. The shims are for the times you'd rather type the package manager directly — bare `pnpm install`, `npm ci`, `yarn add` — and still have it go through Nub. One command turns that on.
+
+```console
+$ which pnpm
+/opt/homebrew/bin/pnpm
+
+$ nub pm shim
+nub pm shim: 7 entries in /Users/you/.nub/shims (7 created)
+  PATH: added /Users/you/.nub/shims to /Users/you/.zshrc — open a new shell or run `source /Users/you/.zshrc`
+
+$ source ~/.zshrc
+
+$ which pnpm
+/Users/you/.nub/shims/pnpm
+```
+
+After `nub pm shim`, bare `pnpm` resolves to a shim in `~/.nub/shims` — itself a hardlink to the Nub binary. Running `pnpm install` now dispatches to the exact pnpm your project pins, in-process, under the project's Node. `nub pm unshim` removes the shim directory and strips the PATH block, restoring the previous `pnpm`.
+
+```console
+$ nub pm unshim
+nub pm unshim: removed /Users/you/.nub/shims
+  PATH: removed the shims block from /Users/you/.zshrc
+```
+
+## Shims vs the pin
+
+These are separate steps that do different things, and only `nub pm shim` installs shims.
+
+The pin lives in `package.json`. Running `nub pm use pnpm` writes the `packageManager` field (and a `devEngines.packageManager` range) and aligns the lockfile — it sets which package manager the project uses. It does not touch your PATH or install any shim:
+
+```console
+$ nub pm use pnpm
+using pnpm@11.7.0
+  package.json: packageManager = pnpm@11.7.0 (+sha512)
+  package.json: devEngines.packageManager = { name: "pnpm", version: "^11.7.0", onFail: "warn" }
+  no lockfile — the next install writes pnpm-lock.yaml
+```
+
+With a pin set, `nub install` already runs the right pnpm. The shims are the separate, explicit opt-in that makes the *bare* `pnpm` command — typed at a shell, or invoked by a tool you don't control — route through Nub too. Set the pin with `nub pm use`; install the shims with `nub pm shim`, once, if you want bare commands intercepted.
+
+## Per-invocation overhead
+
+A shim sits in front of every command, so what matters is the time it adds over running the package manager directly. A corepack-style shim is a Node script — a `#!/usr/bin/env node` file — so invoking it boots the Node interpreter to read your pin and load the pinned package manager before any install work begins. The Nub shim is a hardlink to the native Nub binary, so the process that resolves the pin and dispatches is the one already running; there is no extra interpreter starting up in front of the package manager.
+
+## Strict by default
+
+In a pinned project, a shim refuses to run a *different* package manager rather than silently writing a competing lockfile and `node_modules`. Bare `yarn add react` in a project pinned to pnpm exits nonzero and names what to run instead:
+
+```console
+$ yarn add react
+nub: the nub package-manager shims on your PATH (installed via `nub pm shim`) intercepted this.
+This project pins pnpm (via package.json#packageManager) — refusing to run yarn.   # ❌ wrong package manager for this project
+A different package manager here would write a competing lockfile and node_modules.
+
+  run instead:  pnpm add react
+  to bypass:    invoke the system yarn by absolute path, or remove the shims: nub pm unshim
+$ echo $?
+1
+```
+
+Runner commands stay transparent. `npx`, `pnpx`, and the `init` / `create` / `dlx` / `exec` verbs fall through to the system tool whatever the pin, so `npm create vite` works in a pnpm project. A package manager spawned by a running install — a lifecycle script that shells out to a different one — also falls through rather than breaking an install you never typed directly.
