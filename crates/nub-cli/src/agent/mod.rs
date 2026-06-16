@@ -88,7 +88,9 @@ fn run_docs(args: &[String]) -> Result<i32> {
             "--list" | "--toc" => list_only = true,
             "--page" => {
                 let slug = iter.next().map(String::as_str).ok_or_else(|| {
-                    anyhow::anyhow!("nub agent docs --page needs a path, e.g. `--page /docs/runtime/typescript`")
+                    anyhow::anyhow!(
+                        "nub agent docs --page needs a path, e.g. `--page /docs/runtime/typescript`"
+                    )
                 })?;
                 page = Some(slug);
             }
@@ -136,8 +138,8 @@ fn resolve_slug(arg: &str) -> Option<&'static (&'static str, &'static str, &'sta
     // Candidate canonical forms to try against the baked slugs.
     let with_docs = format!("/docs/{trimmed}");
     let candidates = [
-        format!("/{trimmed}"),       // exact (already had a leading slash)
-        with_docs.clone(),           // bare path, prepend /docs
+        format!("/{trimmed}"), // exact (already had a leading slash)
+        with_docs.clone(),     // bare path, prepend /docs
         format!("/docs/{}", trimmed.strip_prefix("docs/").unwrap_or(trimmed)),
     ];
     DOCS.iter().find(|(s, _, _)| {
@@ -157,8 +159,7 @@ fn print_page(slug: &str) -> Result<i32> {
             Ok(0)
         }
         None => {
-            let mut msg =
-                format!("nub agent docs: unknown page '{slug}'.\n\nAvailable pages:\n");
+            let mut msg = format!("nub agent docs: unknown page '{slug}'.\n\nAvailable pages:\n");
             for (s, title, _) in DOCS {
                 msg.push_str(&format!("  {s} — {title}\n"));
             }
@@ -326,8 +327,8 @@ mod tests {
         // THE acceptance test: a verbatim in-doc markdown link target resolves.
         // The docs link as `](/docs/runtime/decorators)` — so that exact path,
         // pasted straight into `--page`, must serve the page.
-        let canonical = resolve_slug("/docs/runtime/decorators")
-            .expect("canonical /docs link target resolves");
+        let canonical =
+            resolve_slug("/docs/runtime/decorators").expect("canonical /docs link target resolves");
         assert_eq!(canonical.0, "/docs/runtime/decorators");
 
         // the maintainer's example spelling (`/runtime/decorators`, no `/docs`) resolves to

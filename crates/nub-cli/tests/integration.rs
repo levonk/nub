@@ -1414,7 +1414,13 @@ fn workspace_parallel_timing() {
     // relative comparison.
     let start = std::time::Instant::now();
     let serial = Command::new(nub_binary())
-        .args(["run", "-r", "--parallel", "--workspace-concurrency=1", "slow"])
+        .args([
+            "run",
+            "-r",
+            "--parallel",
+            "--workspace-concurrency=1",
+            "slow",
+        ])
         .current_dir(&fixture)
         .output()
         .expect("failed to spawn nub");

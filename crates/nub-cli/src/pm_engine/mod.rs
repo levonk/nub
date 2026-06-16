@@ -1446,6 +1446,7 @@ fn resolve_config_surface(cwd: &Path) -> ConfigSurface {
 ///   never disables it). Off-switch: `.npmrc default-trust=false` /
 ///   `npm_config_default_trust=false` — this is the embedder tier, below
 ///   every user source.
+///
 /// Emit a single install-time warning when the project's `.yarnrc.yml`
 /// declares `nodeLinker: pnp` but nub will install a hoisted `node_modules`
 /// tree instead. The warning fires once per install, only for yarn-incumbent
@@ -1815,7 +1816,10 @@ mod tests {
         };
 
         // Yarn + pnp → warn.
-        assert!(would_warn(Some(LockfileKind::Yarn), Some("nodeLinker: pnp\n")));
+        assert!(would_warn(
+            Some(LockfileKind::Yarn),
+            Some("nodeLinker: pnp\n")
+        ));
         assert!(would_warn(
             Some(LockfileKind::YarnBerry),
             Some("nodeLinker: pnp\n")
@@ -1831,8 +1835,14 @@ mod tests {
         assert!(!would_warn(Some(LockfileKind::YarnBerry), None));
 
         // Non-yarn kinds + pnp → no warn (npm/bun projects can't have .yarnrc.yml pnp).
-        assert!(!would_warn(Some(LockfileKind::Npm), Some("nodeLinker: pnp\n")));
-        assert!(!would_warn(Some(LockfileKind::Bun), Some("nodeLinker: pnp\n")));
+        assert!(!would_warn(
+            Some(LockfileKind::Npm),
+            Some("nodeLinker: pnp\n")
+        ));
+        assert!(!would_warn(
+            Some(LockfileKind::Bun),
+            Some("nodeLinker: pnp\n")
+        ));
         assert!(!would_warn(
             Some(LockfileKind::Pnpm),
             Some("nodeLinker: pnp\n")
