@@ -124,7 +124,7 @@ pub(crate) fn rewrite_help(text: impl AsRef<str>) -> String {
         ),
         // `why --paths` example path: nub's virtualStoreDir default.
         (".aube/<dep_path>", ".nub/<dep_path>"),
-        // The GVS location (add/install `--no-global-virtual-store` docs);
+        // The GVS location in engine docs;
         // described structurally — the literal path is engine cache state.
         (
             "`~/.cache/aube/virtual-store/`",
@@ -178,7 +178,12 @@ pub(crate) fn rewrite_help(text: impl AsRef<str>) -> String {
 pub(crate) fn rewrite(text: &str) -> String {
     let text = text
         .replace("ERR_AUBE_", "ERR_NUB_")
-        .replace("WARN_AUBE_", "WARN_NUB_");
+        .replace("WARN_AUBE_", "WARN_NUB_")
+        .replace(
+            "`aube config set enableGlobalVirtualStore false`",
+            "`enableGlobalVirtualStore=false` in `.npmrc` or set \
+             `npm_config_enable_global_virtual_store=false`",
+        );
     let mut out = String::with_capacity(text.len());
     let mut emitted = false;
     for line in text.split('\n') {
@@ -381,11 +386,14 @@ mod tests {
         // vite/next install. The introductory label must go with its URL.
         let line = "WARN `vite` isn't compatible with nub's global virtual \
                     store — installing per-project instead. To silence, run \
-                    `nub config set enableGlobalVirtualStore false`. \
+                    `aube config set enableGlobalVirtualStore false`. \
                     Details: https://aube.jdx.dev/package-manager/global-virtual-store \
                     code=WARN_NUB_GVS_INCOMPATIBLE";
         let out = rewrite(line);
         assert!(!out.contains("aube.jdx.dev"), "{out}");
+        assert!(!out.contains("config set"), "{out}");
+        assert!(out.contains("`enableGlobalVirtualStore=false` in `.npmrc`"));
+        assert!(out.contains("`npm_config_enable_global_virtual_store=false`"));
         assert!(
             !out.contains("Details:"),
             "inline label introducing a stripped URL must drop: {out}"

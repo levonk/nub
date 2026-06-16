@@ -112,6 +112,32 @@ fn recursive_run_skips_packages_without_the_script_and_exits_zero() {
 }
 
 #[test]
+fn recursive_run_discovers_object_form_workspace_packages() {
+    let root = tmp_workspace("object-form");
+    write(
+        &root.join("package.json"),
+        r#"{"name":"object-root","version":"1.0.0","private":true,"workspaces":{"packages":["packages/*"]}}"#,
+    );
+    write(
+        &root.join("packages/api/package.json"),
+        r#"{"name":"api","version":"1.0.0","scripts":{"who":"echo OBJECT:api"}}"#,
+    );
+    write(
+        &root.join("packages/web/package.json"),
+        r#"{"name":"web","version":"1.0.0","scripts":{"who":"echo OBJECT:web"}}"#,
+    );
+
+    let (stdout, stderr, code) = run_nub(&root, &["run", "-r", "who"]);
+    let combined = format!("{stdout}{stderr}");
+    assert_eq!(
+        code, 0,
+        "object-form workspaces must discover members for recursive run\n{combined}"
+    );
+    assert!(combined.contains("OBJECT:api"), "api must run\n{combined}");
+    assert!(combined.contains("OBJECT:web"), "web must run\n{combined}");
+}
+
+#[test]
 fn recursive_run_with_no_matching_script_anywhere_notifies_and_exits_zero() {
     let root = script_workspace("none-have-it");
     let (stdout, stderr, code) = run_nub(&root, &["run", "-r", "absent-everywhere"]);

@@ -25,10 +25,12 @@ Both formats are read:
   rows={[
     { feature: <><code>yarn.lock</code> read</>, status: 'yes', note: 'Classic (v1) and Berry (v2+)' },
     { feature: <><code>yarn.lock</code> write</>, status: 'no', note: 'refused' },
-    { feature: <><code>.yarnrc.yml</code> / <code>.yarnrc</code></>, status: 'no' },
+    { feature: <code>.yarnrc.yml</code>, status: 'partial', note: 'registry/auth/linker subset only, Yarn incumbents only' },
+    { feature: <code>.yarnrc</code>, status: 'no', note: 'Classic config is not parsed' },
     { feature: <code>resolutions</code>, status: 'yes' },
     { feature: <code>packageManager</code>, status: 'yes' },
-    { feature: <><code>nodeLinker: pnp</code> / <code>pnpm</code> install</>, status: 'no', note: 'installs hoisted instead' },
+    { feature: <><code>nodeLinker: node-modules</code> / <code>pnpm</code></>, status: 'partial', note: 'mapped to Nub linkers' },
+    { feature: <code>nodeLinker: pnp</code>, status: 'no', note: 'PnP install generation is out of scope' },
     { feature: <code>dependenciesMeta.*.built</code>, status: 'no' },
     { feature: <code>packageExtensions</code>, status: 'no' },
     { feature: <code>supportedArchitectures</code>, status: 'no' },
@@ -73,42 +75,53 @@ The `nub pm use yarn` command is the [meta-manager](/docs/pm) command: it fetche
 
 ## Config files
 
-Nub reads **`.npmrc` only** for registry, auth, scopes, CA, and proxy settings. It does not read Yarn's config files for any package-management setting:
+Nub reads `.npmrc` for registry, auth, scopes, CA, and proxy settings. In a **Yarn-incumbent** project, Nub also reads a small `.yarnrc.yml` subset that maps cleanly onto its existing registry and linker model:
 
-- `.yarnrc.yml` (Berry) — project **and** global (`~/.yarnrc.yml`) — is read for exactly one key, `yarnPath`, and nothing else. When the project commits a Yarn release and points `yarnPath` at it, `nub pm` runs that release directly. Every *config* key in the file (registry, auth, scopes, CA, proxy, `nodeLinker`, …) is ignored.
-- classic `.yarnrc` (Yarn 1) is not parsed.
+- `npmRegistryServer` becomes the default registry.
+- `npmScopes.<scope>.npmRegistryServer` becomes a scoped registry.
+- `npmAuthToken` and `npmAuthIdent` are applied when they can be attached to a known registry, including `npmRegistries` entries.
+- Scope-level auth (`npmScopes.<scope>.npmAuthToken` / `npmAuthIdent`) is applied only when that scope has its own unique custom `npmRegistryServer`. Scope auth with no custom registry, with a shared registry, or with a registry that also has an `npmRegistries` entry is skipped rather than widened into registry-wide credentials.
+- `nodeLinker: node-modules` maps to Nub's hoisted linker.
+- `nodeLinker: pnpm` maps to Nub's isolated linker.
+- `YARN_NPM_REGISTRY_SERVER`, `YARN_NPM_AUTH_TOKEN`, `YARN_NPM_AUTH_IDENT`, and `YARN_NODE_LINKER` are recognized above `.yarnrc.yml` for the same subset. Top-level auth env values attach when the env surface also supplies the registry they belong to; scoped/map-shaped Yarn env config is not translated.
 
-In practice, none of these Yarn-config keys take effect under Nub:
+The same brand boundary applies as everywhere else: `.yarnrc.yml` is read only when the project is actually Yarn-owned, by `packageManager: "yarn@..."` or a Yarn lockfile. Nub-identity projects do not consume Yarn config.
 
 ```yaml
-# .yarnrc.yml — ALL IGNORED by nub
-npmRegistryServer: https://registry.internal/   # ❌ ignored — nub reads .npmrc `registry=`
-npmScopes:                                       # ❌ ignored — per-scope registries unread
+# .yarnrc.yml — supported subset in a Yarn-incumbent project
+npmRegistryServer: https://registry.internal/
+npmScopes:
   myorg:
     npmRegistryServer: https://npm.myorg.dev/
-    npmAuthToken: ...                            # ❌ ignored — private-dep auth NOT applied
-npmAuthToken: ...                                # ❌ ignored
-httpsCaFilePath: ./ca.pem                        # ❌ ignored
-httpProxy: http://proxy:8080                     # ❌ ignored
+    npmAuthToken: "<token>"
+npmRegistries:
+  "https://npm.myorg.dev":
+    npmAuthIdent: "user:pass"
+nodeLinker: node-modules
 ```
 
-If your private-registry auth or custom registry lives in `.yarnrc.yml` (which for Berry is the *only* place it lives), Nub will not pick it up and private installs fail with 401/403. Put the equivalent settings in `.npmrc`, which Nub does read.
+Project `.yarnrc.yml` outranks the global `~/.yarnrc.yml`, matching Yarn's rc-file precedence. The support is intentionally narrow: CA/proxy fields, `packageExtensions`, `supportedArchitectures`, constraints, plugins, patch-folder config, and Yarn cache layout are still ignored.
+
+Classic `.yarnrc` (Yarn 1) is not parsed.
 
 ## Node linkers
 
-Nub produces a **hoisted `node_modules`** for a Yarn project regardless of any `nodeLinker` setting — that setting lives in `.yarnrc.yml`, which Nub does not read:
+Nub maps the Yarn linker settings it can represent:
 
 ```yaml
 # .yarnrc.yml
-nodeLinker: pnp     # ❌ nub installs hoisted node_modules instead
-nodeLinker: pnpm    # ❌ also hoisted
+nodeLinker: node-modules  # hoisted node_modules
+nodeLinker: pnpm          # isolated symlink layout
+nodeLinker: pnp           # install generation is not supported
 ```
+
+Yarn Berry defaults to PnP when `nodeLinker` is absent, so a Berry project with no linker setting is treated like a PnP project for install-generation purposes.
 
 **Nub-the-runtime fully supports Plug'n'Play.** If a project was *already* installed by Yarn in PnP mode, Nub can run it — `nub <file>`, `nub run`, and `nubx` honor `.pnp.cjs` across all supported Node versions. What Nub cannot do is *produce* a PnP install. So the supported workflow for a PnP project is: install with `yarn`, run with `nub`. See [Plug'n'Play resolution](/docs/runtime/resolution#yarn-plugnplay) for how nub resolves a PnP project at runtime.
 
 ## Gaps
 
-Several Yarn `package.json` and `.yarnrc.yml` fields have no effect under Nub:
+Several Yarn `package.json` and `.yarnrc.yml` fields still have no effect under Nub:
 
 - `dependenciesMeta.<pkg>.built` — Yarn's per-package build gate is not read; Nub uses its own build-script approval (`nub approve-builds`),
 - `packageExtensions` — Yarn's resolution patches are not applied,

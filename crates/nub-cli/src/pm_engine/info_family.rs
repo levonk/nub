@@ -761,7 +761,10 @@ mod tests {
         let _guard = crate::pm_engine::ENGINE_GLOBAL_LOCK
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        aube_util::update_engine_context(|c| c.read_branded_pnpm_config = true);
+        aube_util::update_engine_context(|c| {
+            c.read_branded_pnpm_config = true;
+            c.read_manifest_root_config = false;
+        });
         let root = tempfile::tempdir().unwrap();
         std::fs::write(
             root.path().join("pnpm-workspace.yaml"),

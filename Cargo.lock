@@ -426,6 +426,7 @@ dependencies = [
  "aube-codes",
  "aube-manifest",
  "aube-util",
+ "blake3",
  "landlock",
  "libc",
  "miette",
@@ -2930,9 +2931,11 @@ dependencies = [
  "aube-codes",
  "aube-lockfile",
  "aube-manifest",
+ "aube-registry",
  "aube-settings",
  "aube-util",
  "aube-workspace",
+ "base64",
  "clap",
  "dirs-next",
  "dotenvy",
@@ -2945,8 +2948,10 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

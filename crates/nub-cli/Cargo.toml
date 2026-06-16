@@ -27,6 +27,9 @@ aube-workspace = { path = "../../vendor/aube/crates/aube-workspace" }
 # routing in pm_engine/store_config_family.rs (npmShared flag, alias
 # spellings, scalar-vs-map types).
 aube-settings = { path = "../../vendor/aube/crates/aube-settings" }
+# Registry URL normalization helpers for translating incumbent Bun config into
+# the engine's existing `.npmrc`-shaped registry/auth model.
+aube-registry = { path = "../../vendor/aube/crates/aube-registry" }
 # Engine error-code constants + the bespoke exit-code table; consumed by the
 # presentation layer (src/pm_engine/present.rs) for the ERR_AUBE_→ERR_NUB_
 # rewrite and the cli_main-compatible exit mapping.
@@ -38,6 +41,7 @@ aube-util = { path = "../../vendor/aube/crates/aube-util" }
 # miette::Report exactly as aube's own cli_main would, then rewrites it.
 miette = { version = "7", features = ["fancy"] }
 anyhow.workspace = true
+base64 = "0.22"
 clap.workspace = true
 dirs-next.workspace = true
 dotenvy = "0.15"
@@ -52,11 +56,13 @@ serde_yaml = "0.9"
 sha2.workspace = true
 tracing.workspace = true
 tempfile = "3"
+toml.workspace = true
 # Multi-thread runtime for the embedded aube install engine (pm_engine.rs).
 # Mirrors aube's own cli_main runtime shape; tokio is dormant on every other
 # nub code path.
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing-subscriber.workspace = true
+url = "2.5"
 
 [target.'cfg(unix)'.dependencies]
 # fd-level capture of the engine's raw println/eprintln hint lines so the

@@ -1117,6 +1117,7 @@ mod tests {
             "nodeLinker": "hoisted",
             "minimumReleaseAge": 1440,
             "hoistPattern": ["*"],
+            "enableGlobalVirtualStore": false,
             // per-axis arch fold
             "supportedArchitectures": { "os": ["linux"] },
             "cpu": ["x64"],
@@ -1167,6 +1168,11 @@ mod tests {
             npmrc.get("hoist-pattern").map(String::as_str),
             Some(r#"["*"]"#)
         );
+        assert_eq!(
+            npmrc.get("enable-global-virtual-store").map(String::as_str),
+            Some("false"),
+            "the approved enableGlobalVirtualStore setting must still migrate to .npmrc"
+        );
         // the arch fold lands cpu inside the supportedArchitectures JSON
         let arch = npmrc.get("supported-architectures").unwrap();
         assert!(arch.contains("linux") && arch.contains("x64"), "{arch}");
@@ -1178,6 +1184,27 @@ mod tests {
         );
         assert!(m.tail.iter().any(|t| t == "production"));
         assert!(m.tail.iter().any(|t| t.contains("totallyMadeUpKey")));
+    }
+
+    #[test]
+    fn gvs_setting_keeps_approved_npmrc_and_env_sources() {
+        let settings = include_str!("../../../../vendor/aube/crates/aube-settings/settings.toml");
+        let start = settings
+            .find("[enableGlobalVirtualStore]")
+            .expect("settings registry must define enableGlobalVirtualStore");
+        let end = settings[start + 1..]
+            .find("\n[")
+            .map(|offset| start + 1 + offset)
+            .unwrap_or(settings.len());
+        let section = &settings[start..end];
+        assert!(
+            section.contains(r#"sources.npmrc = ["enableGlobalVirtualStore""#),
+            "approved .npmrc camelCase source must remain configured:\n{section}"
+        );
+        assert!(
+            section.contains("npm_config_enable_global_virtual_store"),
+            "approved npm config env source must remain configured:\n{section}"
+        );
     }
 
     #[test]

@@ -79,14 +79,14 @@ catalog:
 
 pnpm prefers `pnpm.overrides`; top-level `resolutions` is still honored (pnpm supports it for Yarn compatibility), but top-level `overrides` is npm/bun's field and is ignored under pnpm.
 
-Under a non-pnpm incumbent — npm, Yarn, Bun, or a nub-identity project — none of this is read. A `.pnpmfile.cjs` shapes resolution, so a stray one is ignored with a warning rather than applied silently:
+Under a non-pnpm incumbent — npm, Yarn, Bun, or a Nub-identity project — none of this is read. For npm, Yarn, and Bun incumbents, a stray `.pnpmfile.cjs` is ignored with a warning rather than applied silently:
 
 ```console
 $ nub install
 nub: `.pnpmfile.cjs` ignored — this project uses npm, which doesn't apply pnpmfile hooks. Remove it, name it explicitly with `--pnpmfile`, or switch to pnpm (`nub pm use pnpm`).
 ```
 
-An explicit `--pnpmfile <path>` always loads.
+Under Nub identity, pnpm-named files are outside the supported config surface and default `.pnpmfile.cjs` / `.pnpmfile.mjs` files are ignored silently. An explicit `--pnpmfile <path>` always loads.
 
 ## Install behavior
 
@@ -107,5 +107,5 @@ Lifecycle scripts for dependencies are skipped by default, exactly as pnpm 10 do
 - **Lockfile is v9-only.** v6 (pnpm 8) and v5.4 (pnpm 7) are not parsed — Nub refuses with `ERR_NUB_LOCKFILE_UNSUPPORTED_FORMAT` (exit 1) and leaves `node_modules` and the lockfile untouched. Re-lock with pnpm 9+ first.
 - **No `nodeLinker: pnp`.** Only `isolated` (default) and `hoisted`; `--node-linker pnp` errors.
 - **Virtual store is `node_modules/.nub/`, not `.pnpm/`.** Equivalent shape, not byte-shared; alternating tools relinks.
-- **Config is incumbent-gated.** A non-pnpm-incumbent project ignores `pnpm-workspace.yaml`, `pnpm.*`, and `.pnpmfile.cjs` (with a warning for the pnpmfile).
+- **Config is incumbent-gated.** A non-pnpm-incumbent project ignores `pnpm-workspace.yaml`, `pnpm.*`, and `.pnpmfile.cjs`. Nub identity ignores default pnpmfile hooks silently; npm, Yarn, and Bun incumbents warn.
 - **A `time:` block appears in the lockfile.** Per-package timestamps pnpm doesn't write; harmless and preserved, but visible in a `git diff`.

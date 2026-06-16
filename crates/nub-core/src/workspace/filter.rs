@@ -146,11 +146,8 @@ pub fn discover_members(workspace_root: &Path) -> Vec<WorkspacePackage> {
         Err(_) => return vec![],
     };
 
-    let patterns = match manifest.get("workspaces") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect::<Vec<_>>(),
+    let patterns = match workspace_patterns_from_manifest(&manifest) {
+        Some(patterns) => patterns,
         _ => {
             // Fall back to `pnpm-workspace.yaml` ONLY when pnpm is the incumbent
             // PM. The brand hard gate (AGENTS.md): when the project's PM is not
@@ -173,6 +170,23 @@ pub fn discover_members(workspace_root: &Path) -> Vec<WorkspacePackage> {
     };
 
     expand_member_patterns(workspace_root, &patterns)
+}
+
+fn workspace_patterns_from_manifest(manifest: &serde_json::Value) -> Option<Vec<String>> {
+    match manifest.get("workspaces") {
+        Some(serde_json::Value::Array(arr)) => Some(string_array_values(arr)),
+        Some(serde_json::Value::Object(obj)) => obj
+            .get("packages")
+            .and_then(|v| v.as_array())
+            .map(|arr| string_array_values(arr)),
+        _ => None,
+    }
+}
+
+fn string_array_values(arr: &[serde_json::Value]) -> Vec<String> {
+    arr.iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect()
 }
 
 /// Maximum directory depth crawled for a `**` pattern. `**` is recursive but we
@@ -1113,6 +1127,34 @@ mod tests {
             discovered_names(&root),
             HashSet::from(["core".to_string(), "a".to_string()]),
             "explicit `libs/core` and one-level `packages/*` must both resolve"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn discovers_object_form_workspace_packages() {
+        let root = scaffold_workspace(
+            "object-form",
+            &["libs/core", "packages/*"],
+            &["libs/core", "packages/a"],
+        );
+        fs::write(
+            root.join("package.json"),
+            serde_json::json!({
+                "name": "root",
+                "workspaces": {
+                    "packages": ["libs/core", "packages/*"],
+                    "catalog": { "react": "^18.0.0" }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            discovered_names(&root),
+            HashSet::from(["core".to_string(), "a".to_string()]),
+            "object-form `workspaces.packages` must drive member discovery"
         );
         let _ = fs::remove_dir_all(&root);
     }

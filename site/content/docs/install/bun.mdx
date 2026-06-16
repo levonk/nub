@@ -9,7 +9,7 @@ When Bun is the incumbent package manager, Nub installs against it and writes no
   rows={[
     { feature: <code>bun.lock</code>, status: 'yes', note: 'text format, read + write' },
     { feature: <code>bun.lockb</code>, status: 'no', note: 'binary format, rejected' },
-    { feature: <code>bunfig.toml</code>, status: 'no', note: 'use .npmrc instead' },
+    { feature: <code>bunfig.toml</code>, status: 'partial', note: 'registry, scopes, linker only; Bun-incumbent projects only' },
     { feature: <code>trustedDependencies</code>, status: 'yes' },
     { feature: <code>overrides</code>, status: 'yes' },
     { feature: <code>resolutions</code>, status: 'yes' },
@@ -89,15 +89,29 @@ nub 0.0.44 · ✓ installed 2 packages in 35ms
 
 Nub's curated default-trust floor is on, but inert over a `bun.lock`: its cooling-window gate needs per-package publish-time data, and `bun.lock` carries none, so it fails closed. `trustedDependencies` is the only allowlist that builds anything — exactly Bun's model.
 
+## `bunfig.toml`
+
+Nub reads a small install-only subset of Bun config when Bun is the incumbent package manager: project `bunfig.toml`, plus global `.bunfig.toml` from `XDG_CONFIG_HOME` (or `HOME` when `XDG_CONFIG_HOME` is unset). Project config wins over global config.
+
+Supported today:
+
+- `[install].registry` as a string URL or `{ url, token, username, password }` object. Auth-only objects without `url` apply to the default npm registry.
+- `[install.scopes]` entries as string URLs or registry objects. Auth-only scoped objects inherit `[install].registry`, or the default npm registry when no default is configured, for registry routing.
+- `[install].linker = "hoisted" | "isolated"`, mapped to Nub's existing `nodeLinker`.
+
+Nub identity, npm, pnpm, yarn, and fresh projects do not read `bunfig.toml`; the file is Bun-owned config and stays inert unless Bun is the incumbent. This launch subset is best-effort: unreadable or invalid TOML is ignored instead of failing the install.
+
 ## Gaps
 
-- **No `bunfig.toml`.** Registry URLs, `cafile`, and `[install.scopes]` auth declared only in `bunfig.toml` (project or `~/.bunfig.toml`) are not read. Both Nub and Bun read `.npmrc`, so keep shared registry/auth config there:
+- **Partial `bunfig.toml` only.** Runtime/test/serve fields, security scanner config, cache/global-dir behavior, `cafile` / `ca`, and the rest of Bun's install config are not implemented. For registry/auth that must be shared across tools, `.npmrc` remains the most portable home:
 
   ```ini
   # .npmrc — honored by both nub and bun
   //registry.example.com/:_authToken=${NPM_TOKEN}
   @myscope:registry=https://registry.example.com/
   ```
+
+  Scope-local credentials that use the same registry URL as the default registry are also not faithfully representable in Nub's current registry model. Nub keeps the scoped registry route, but does not widen those credentials into registry-wide auth.
 
 - **No `bun.lockb`.** The binary lockfile is rejected, not migrated — run `bun install --save-text-lockfile` to produce a `bun.lock` first.
 - **Default-trust floor inert over `bun.lock`.** No publish-time data means curated packages aren't auto-trusted; only `trustedDependencies` builds.

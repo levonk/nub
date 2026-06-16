@@ -378,6 +378,35 @@ fn use_nub_warns_about_phantom_deps_only_when_leaving_a_hoisting_pm() {
 /// hook actually gets a chance to run (a frozen/already-current install
 /// short-circuits before pnpmfile detection).
 ///
+/// nub identity: the cwd-default `.pnpmfile` is gated off silently. Unlike
+/// `pnpm-workspace.yaml`, this stray pnpm-named file intentionally gets no
+/// warning under nub identity.
+#[test]
+fn pnpmfile_ignored_silently_under_nub_identity() {
+    let hook = r#"module.exports = { hooks: { preResolution(ctx) { require('fs').writeFileSync('hook-ran.txt', 'yes'); return ctx; } } };"#;
+    let dir = project(
+        "pnpmfile-nub",
+        &[
+            (
+                "package.json",
+                r#"{"name":"app","version":"1.0.0","packageManager":"nub@0.0.1"}"#,
+            ),
+            ("lock.yaml", EMPTY_LOCK),
+            (".pnpmfile.cjs", hook),
+        ],
+    );
+    let (stdout, stderr, code) = run(&dir, &["install", "--no-frozen-lockfile"]);
+    assert_eq!(code, 0, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        !dir.join("hook-ran.txt").exists(),
+        "the cwd-default .pnpmfile must NOT run under nub identity: {stderr}"
+    );
+    assert!(
+        !stderr.contains(".pnpmfile") && !stderr.contains("pnpmfile"),
+        "nub identity must not warn about the default .pnpmfile: {stderr}"
+    );
+}
+
 /// npm incumbent: the cwd-default `.pnpmfile` is gated off — the hook
 /// never runs and exactly one dim warning names the file + the incumbent.
 #[test]

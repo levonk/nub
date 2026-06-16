@@ -51,6 +51,7 @@
 //! branding in the document body — info_family module doc) — which error
 //! with honest per-verb messages in their family dispatchers.
 
+mod bun_config;
 pub mod config_scope;
 pub mod identity;
 pub mod info_family;
@@ -1195,15 +1196,11 @@ pub(crate) fn engine_brand_preflight() {
     // `set_cache_root($XDG_CACHE/nub/pm)` for the packument / git-clone /
     // node-gyp caches that derive from `aube_store::dirs::cache_dir()`.
     //
-    // GAP — env families: the old `set_env_families(NPM | EXTERNAL)` masked
-    // aube's settings-class `AUBE_*` env aliases (e.g. `AUBE_NO_LOCK`,
-    // `AUBE_DEFAULT_LOCKFILE_FORMAT`, `AUBE_LINK_CONCURRENCY`) so nub's config
-    // contract stayed the npm ecosystem's. The aube refactor REMOVED the
-    // env-family gating mechanism entirely (no `EnvFamilies`, no gated
-    // `aube_util::env::var`); `NUB.env_prefix = None` is the nearest expression
-    // of intent but does NOT re-mask those aliases, so under nub a project that
-    // sets `AUBE_*` settings vars now has them honored. No replacement seam
-    // exists. This is a behavior change flagged for the human (see report).
+    // Env contract: the Nub profile does not read aube-branded settings env.
+    // Standalone aube keeps `AUBE_*`; Nub resolves user-facing PM knobs through
+    // neutral npm config env (`npm_config_*`) or Nub-owned env where the
+    // embedder profile defines one. This preserves the public brand boundary
+    // while keeping aube's standalone surface intact.
     //
     // Resolver primer cache (RESOLVED by the brand-boundary-env migration): the
     // primer now derives its cache dir from the embedder's `cache_namespace`, so
@@ -1222,8 +1219,10 @@ pub(crate) fn engine_brand_preflight() {
     // move together behind ONE EngineContext posture: `read_branded_pnpm_config`
     // gates the `pnpm-workspace.yaml` candidate, the `pnpm` package.json
     // namespace, AND pnpm's global `~/.config/pnpm/auth.ini` — true only in the
-    // PnpmOrFresh arm. `pnpmfile_default_enabled` gates the cwd-default
-    // `.pnpmfile`; off only under a non-pnpm incumbent (NonPnpmCompat). The probe
+    // PnpmOrFresh arm. `read_manifest_root_config` is true only under nub
+    // identity, where root-level config migrated by `nub pm use nub` is the
+    // native surface. `pnpmfile_default_enabled` gates the cwd-default
+    // `.pnpmfile`; true only in the PnpmOrFresh arm. The probe
     // is engine-free (plain manifest/lockfile-presence reads): ONE walk up the
     // tree, ONE `current_dir()` read (see [`resolve_config_surface`]).
     let surface = std::env::current_dir()
@@ -1231,10 +1230,22 @@ pub(crate) fn engine_brand_preflight() {
         .map(|cwd| resolve_config_surface(&cwd))
         .unwrap_or(ConfigSurface::PnpmOrFresh);
     let read_branded_pnpm_config = matches!(surface, ConfigSurface::PnpmOrFresh);
-    let pnpmfile_default_enabled = !matches!(surface, ConfigSurface::NonPnpmCompat(_));
+    let read_yarn_config = read_yarn_config_for_surface(&surface);
+    let bunfig = match &surface {
+        ConfigSurface::NonPnpmCompat { role: "bun", dir } => {
+            bun_config::load_bunfig_npmrc_entries(dir)
+        }
+        _ => bun_config::BunfigNpmrcEntries::default(),
+    };
+    let read_manifest_root_config = matches!(surface, ConfigSurface::NubIdentity(_));
+    let pnpmfile_default_enabled = matches!(surface, ConfigSurface::PnpmOrFresh);
     aube_util::update_engine_context(|c| {
         c.read_branded_pnpm_config = read_branded_pnpm_config;
+        c.read_yarn_config = read_yarn_config;
+        c.read_manifest_root_config = read_manifest_root_config;
         c.pnpmfile_default_enabled = pnpmfile_default_enabled;
+        c.synthetic_user_npmrc_entries = bunfig.user;
+        c.synthetic_project_npmrc_entries = bunfig.project;
     });
     match surface {
         ConfigSurface::NubIdentity(dir) => {
@@ -1250,7 +1261,7 @@ pub(crate) fn engine_brand_preflight() {
                 );
             }
         }
-        ConfigSurface::NonPnpmCompat(role) => {
+        ConfigSurface::NonPnpmCompat { role, .. } => {
             // Compat mode, but the incumbent is npm/yarn/bun — NOT pnpm. The
             // pnpm-specific config surface is theirs to ignore (gated off by
             // `read_branded_pnpm_config = false`): a stray `pnpm-workspace.yaml`,
@@ -1325,7 +1336,7 @@ enum ConfigSurface {
     /// Compat mode with a NON-pnpm incumbent (npm / yarn / bun). The
     /// pnpm-specific surface is OFF (it's another tool's state); the carried
     /// name is the incumbent for user-facing warning text.
-    NonPnpmCompat(&'static str),
+    NonPnpmCompat { role: &'static str, dir: PathBuf },
     /// pnpm role, or a fresh project (Axiom 4 gives fresh projects
     /// pnpm-format artifacts): play the pnpm incumbent completely — the
     /// pnpm-specific surface stays live.
@@ -1378,9 +1389,9 @@ fn resolve_config_surface(cwd: &Path) -> ConfigSurface {
         if let Some(decl) = aube_lockfile::declared_package_manager(&dir) {
             return match decl.name.as_str() {
                 "nub" => ConfigSurface::NubIdentity(dir),
-                "npm" => ConfigSurface::NonPnpmCompat("npm"),
-                "yarn" => ConfigSurface::NonPnpmCompat("yarn"),
-                "bun" => ConfigSurface::NonPnpmCompat("bun"),
+                "npm" => ConfigSurface::NonPnpmCompat { role: "npm", dir },
+                "yarn" => ConfigSurface::NonPnpmCompat { role: "yarn", dir },
+                "bun" => ConfigSurface::NonPnpmCompat { role: "bun", dir },
                 // pnpm / unknown tool: keep the full pnpm-shaped surface.
                 _ => ConfigSurface::PnpmOrFresh,
             };
@@ -1399,7 +1410,7 @@ fn resolve_config_surface(cwd: &Path) -> ConfigSurface {
         // A foreign npm/yarn/bun lockfile (with or without a lock.yaml beside
         // it — the ambiguity state) → non-pnpm compat.
         if let Some(name) = foreign {
-            return ConfigSurface::NonPnpmCompat(name);
+            return ConfigSurface::NonPnpmCompat { role: name, dir };
         }
         // No pnpm/foreign lockfile: a lone lock.yaml decides nub identity.
         if nub_lock {
@@ -1412,6 +1423,10 @@ fn resolve_config_surface(cwd: &Path) -> ConfigSurface {
     }
     // Nothing decided anywhere within the walk: fresh = pnpm-shaped.
     ConfigSurface::PnpmOrFresh
+}
+
+fn read_yarn_config_for_surface(surface: &ConfigSurface) -> bool {
+    matches!(surface, ConfigSurface::NonPnpmCompat { role: "yarn", .. })
 }
 
 /// Nub's replacement setting defaults, fed to the engine's embedder-defaults
@@ -1447,22 +1462,20 @@ fn resolve_config_surface(cwd: &Path) -> ConfigSurface {
 ///   `npm_config_default_trust=false` — this is the embedder tier, below
 ///   every user source.
 ///
-/// Emit a single install-time warning when the project's `.yarnrc.yml`
-/// declares `nodeLinker: pnp` but nub will install a hoisted `node_modules`
-/// tree instead. The warning fires once per install, only for yarn-incumbent
-/// projects, and only when we can confirm the requested linker is `pnp` —
-/// no warning for `hoisted`, `isolated`, absent, or anything else.
+/// Emit a single install-time warning when the Yarn incumbent's effective
+/// linker is PnP but nub will install a `node_modules` tree instead. Yarn
+/// Berry defaults to PnP when no `nodeLinker` is configured, so absence is
+/// warning-worthy for Berry but not for Yarn Classic.
 fn warn_if_pnp_requested(detected: Option<&DetectedLockfile>, cwd: &Path) {
-    let is_yarn = matches!(
-        detected.map(|d| d.kind),
-        Some(LockfileKind::Yarn | LockfileKind::YarnBerry)
-    );
-    if !is_yarn {
+    let Some(kind @ (LockfileKind::Yarn | LockfileKind::YarnBerry)) = detected.map(|d| d.kind)
+    else {
         return;
-    }
+    };
     let root = detected.map(|d| d.dir.as_path()).unwrap_or(cwd);
-    if yarnrc_node_linker(root).as_deref() == Some("pnp") {
-        let line = "nub: this project requests Plug'n'Play (nodeLinker: pnp in .yarnrc.yml), \
+    if effective_yarn_node_linker(root, cwd, kind == LockfileKind::YarnBerry).as_deref()
+        == Some("pnp")
+    {
+        let line = "nub: this Yarn project uses Plug'n'Play (nodeLinker: pnp or Yarn Berry's default), \
                     which nub does not implement — installing a node_modules tree instead. \
                     [WARN_NUB_PNP_LINKER_DOWNGRADE]";
         if scope_warning_uses_dim() {
@@ -1473,11 +1486,46 @@ fn warn_if_pnp_requested(detected: Option<&DetectedLockfile>, cwd: &Path) {
     }
 }
 
-/// Read the `nodeLinker:` key from `.yarnrc.yml` at the project root, returning
-/// the lowercased scalar value when present. Uses the same hand line-scan idiom
-/// as `nub_core::pm::resolve::committed_yarn_path` — nub-cli takes no YAML
+fn effective_yarn_node_linker(root: &Path, cwd: &Path, berry_default_pnp: bool) -> Option<String> {
+    if let Ok(value) = std::env::var("YARN_NODE_LINKER")
+        && !value.trim().is_empty()
+    {
+        return Some(value.trim().to_ascii_lowercase());
+    }
+
+    let mut value = dirs_next::home_dir()
+        .as_deref()
+        .and_then(yarnrc_node_linker);
+    for dir in yarnrc_walk_dirs(root, cwd) {
+        if let Some(next) = yarnrc_node_linker(&dir) {
+            value = Some(next);
+        }
+    }
+    value.or_else(|| berry_default_pnp.then(|| "pnp".to_string()))
+}
+
+fn yarnrc_walk_dirs(root: &Path, cwd: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let mut current = if cwd.starts_with(root) {
+        cwd.to_path_buf()
+    } else {
+        root.to_path_buf()
+    };
+    loop {
+        dirs.push(current.clone());
+        if !current.pop() {
+            break;
+        }
+    }
+    dirs.reverse();
+    dirs
+}
+
+/// Read the `nodeLinker:` key from `.yarnrc.yml` at a directory, returning the
+/// lowercased scalar value when present. Uses the same hand line-scan idiom as
+/// `nub_core::pm::resolve::committed_yarn_path` — nub-cli takes no YAML
 /// dependency. Only top-level, unindented `nodeLinker:` entries are recognized;
-/// nested or multi-document forms are not (no real-world `.yarnrc.yml` nests it).
+/// nested or multi-document forms are not.
 fn yarnrc_node_linker(root: &Path) -> Option<String> {
     let content = std::fs::read_to_string(root.join(".yarnrc.yml")).ok()?;
     for line in content.lines() {
@@ -1791,6 +1839,7 @@ mod tests {
     fn warn_if_pnp_requested_fires_only_for_yarn_with_pnp_linker() {
         let dir = tempfile::tempdir().unwrap();
         let yarnrc = dir.path().join(".yarnrc.yml");
+        static YARN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         // Helper that mirrors the gating logic without actually calling
         // eprintln! — we check the predicate, not the output channel.
@@ -1812,7 +1861,16 @@ mod tests {
                 .as_ref()
                 .map(|d| d.dir.as_path())
                 .unwrap_or(dir.path());
-            is_yarn && yarnrc_node_linker(root).as_deref() == Some("pnp")
+            is_yarn
+                && effective_yarn_node_linker(
+                    root,
+                    root,
+                    detected
+                        .as_ref()
+                        .is_some_and(|d| d.kind == LockfileKind::YarnBerry),
+                )
+                .as_deref()
+                    == Some("pnp")
         };
 
         // Yarn + pnp → warn.
@@ -1831,8 +1889,40 @@ mod tests {
             Some("nodeLinker: hoisted\n")
         ));
 
-        // Yarn + no .yarnrc.yml → no warn.
-        assert!(!would_warn(Some(LockfileKind::YarnBerry), None));
+        // Yarn Classic + no .yarnrc.yml → no warn; Yarn Berry defaults to PnP.
+        assert!(!would_warn(Some(LockfileKind::Yarn), None));
+        assert!(would_warn(Some(LockfileKind::YarnBerry), None));
+
+        // A nearer rc file overrides an ancestor rc file.
+        std::fs::write(&yarnrc, "nodeLinker: pnp\n").unwrap();
+        let child = dir.path().join("packages/app");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(child.join(".yarnrc.yml"), "nodeLinker: node-modules\n").unwrap();
+        assert_ne!(
+            effective_yarn_node_linker(dir.path(), &child, true).as_deref(),
+            Some("pnp")
+        );
+
+        // A parent rc above the detected project root is still visible to the
+        // Yarn translator, so the warning scan must not stop at the root.
+        let outside = tempfile::tempdir().unwrap();
+        let repo = outside.path().join("repo");
+        let workspace = repo.join("packages/app");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(outside.path().join(".yarnrc.yml"), "nodeLinker: pnp\n").unwrap();
+        assert_eq!(
+            effective_yarn_node_linker(&repo, &workspace, false).as_deref(),
+            Some("pnp")
+        );
+
+        // Yarn env config outranks the Berry default and rc files.
+        let _env = YARN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("YARN_NODE_LINKER", "node-modules") };
+        assert_ne!(
+            effective_yarn_node_linker(dir.path(), dir.path(), true).as_deref(),
+            Some("pnp")
+        );
+        unsafe { std::env::remove_var("YARN_NODE_LINKER") };
 
         // Non-yarn kinds + pnp → no warn (npm/bun projects can't have .yarnrc.yml pnp).
         assert!(!would_warn(
@@ -1889,7 +1979,10 @@ mod tests {
             let d = root(&[("package.json", &format!(r#"{{"packageManager":"{pm}"}}"#))]);
             assert_eq!(
                 resolve_config_surface(d.path()),
-                ConfigSurface::NonPnpmCompat(name),
+                ConfigSurface::NonPnpmCompat {
+                    role: name,
+                    dir: d.path().to_path_buf()
+                },
                 "{pm} is a non-pnpm compat role"
             );
         }
@@ -1933,13 +2026,19 @@ mod tests {
         ]);
         assert_eq!(
             resolve_config_surface(d.path()),
-            ConfigSurface::NonPnpmCompat("yarn")
+            ConfigSurface::NonPnpmCompat {
+                role: "yarn",
+                dir: d.path().to_path_buf()
+            }
         );
         // A lone foreign lockfile → non-pnpm compat.
         let d = root(&[("package.json", "{}"), ("yarn.lock", "# yarn\n")]);
         assert_eq!(
             resolve_config_surface(d.path()),
-            ConfigSurface::NonPnpmCompat("yarn")
+            ConfigSurface::NonPnpmCompat {
+                role: "yarn",
+                dir: d.path().to_path_buf()
+            }
         );
         // A pnpm-lock.yaml beside a foreign one → pnpm surface (pnpm-lock
         // outranks the foreign lockfile in the merged walk).
@@ -1953,7 +2052,10 @@ mod tests {
         let d = root(&[("package.json", "{}"), ("bun.lockb", "\0")]);
         assert_eq!(
             resolve_config_surface(d.path()),
-            ConfigSurface::NonPnpmCompat("bun")
+            ConfigSurface::NonPnpmCompat {
+                role: "bun",
+                dir: d.path().to_path_buf()
+            }
         );
 
         // ── fresh + walk-up ──────────────────────────────────────────────
@@ -1980,8 +2082,38 @@ mod tests {
         std::fs::create_dir_all(&member).unwrap();
         assert_eq!(
             resolve_config_surface(&member),
-            ConfigSurface::NonPnpmCompat("yarn")
+            ConfigSurface::NonPnpmCompat {
+                role: "yarn",
+                dir: d.path().to_path_buf()
+            }
         );
+    }
+
+    #[test]
+    fn yarn_config_read_gate_is_yarn_incumbent_only() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(read_yarn_config_for_surface(
+            &ConfigSurface::NonPnpmCompat {
+                role: "yarn",
+                dir: root.path().to_path_buf(),
+            }
+        ));
+        assert!(!read_yarn_config_for_surface(&ConfigSurface::NubIdentity(
+            root.path().to_path_buf()
+        )));
+        assert!(!read_yarn_config_for_surface(
+            &ConfigSurface::NonPnpmCompat {
+                role: "npm",
+                dir: root.path().to_path_buf(),
+            }
+        ));
+        assert!(!read_yarn_config_for_surface(
+            &ConfigSurface::NonPnpmCompat {
+                role: "bun",
+                dir: root.path().to_path_buf(),
+            }
+        ));
+        assert!(!read_yarn_config_for_surface(&ConfigSurface::PnpmOrFresh));
     }
 
     #[test]

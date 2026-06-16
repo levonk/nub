@@ -5705,8 +5705,8 @@ mod tests {
     #[test]
     fn install_parses_with_the_i_alias_and_engine_flags() {
         // `nub i -P --node-linker hoisted` ≡ `nub install …` (npm/pnpm muscle
-        // memory); the engine flags land on the variant, and the three frozen
-        // flags are mutually exclusive.
+        // memory); the engine flags land on the variant, and the frozen
+        // lockfile flags stay mutually exclusive.
         let cli = parse(&["nub", "i", "-P", "--node-linker", "hoisted"]).unwrap();
         assert!(matches!(
             cli.command,
@@ -5723,6 +5723,31 @@ mod tests {
             .is_err(),
             "the frozen-lockfile flags are mutually exclusive"
         );
+    }
+
+    #[test]
+    fn install_help_does_not_advertise_unapproved_gvs_flags() {
+        let err = parse(&["nub", "install", "--help"]).expect_err("--help exits through clap");
+        let help = err.render().to_string();
+        assert!(
+            help.contains("--node-linker") && help.contains("--registry"),
+            "sanity-check install help rendered: {help}"
+        );
+        for flag in [
+            "--enable-global-virtual-store",
+            "--disable-global-virtual-store",
+            "--enable-gvs",
+            "--disable-gvs",
+        ] {
+            assert!(
+                !help.contains(flag),
+                "nub install help must not advertise unapproved GVS flag {flag}:\n{help}"
+            );
+            assert!(
+                parse(&["nub", "install", flag]).is_err(),
+                "nub install must reject unapproved GVS flag {flag}"
+            );
+        }
     }
 
     #[test]
