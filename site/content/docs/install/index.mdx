@@ -129,12 +129,93 @@ The two compose: `nub pm shim` routes bare `npm` / `pnpm` / `yarn` through the p
 
 ## Per-package-manager compatibility
 
-What Nub reads and writes keys off the project's incumbent package manager:
+What Nub reads and writes keys off the project's incumbent package manager — inferred from the `packageManager` field or the lockfile on disk:
 
-- [pnpm](/docs/install/pnpm) — the closest mirror: native `pnpm-lock.yaml` v9 read+write, isolated layout, `.pnpmfile.cjs` hooks.
-- [npm](/docs/install/npm) — `package-lock.json` v2/v3 round-trip byte-for-byte, `.npmrc` at project and user scope.
-- [Bun](/docs/install/bun) — `bun.lock` text round-trip, `trustedDependencies` build trust.
-- [Yarn](/docs/install/yarn) — read-only: `yarn.lock` (Classic and Berry) is consumed, never rewritten.
+<PmSupport
+  rows={[
+    {
+      pm: 'npm',
+      items: [
+        { code: 'package-lock.json (v2/v3)', ok: true },
+        { code: 'npm-shrinkwrap.json', ok: true },
+        { code: '.npmrc', ok: true },
+        { code: 'overrides', ok: true },
+        { code: 'workspaces', ok: true },
+        { code: 'engines / os / cpu', ok: true },
+        { code: 'npm_config_*', ok: true },
+      ],
+    },
+    {
+      pm: 'pnpm',
+      items: [
+        { code: 'pnpm-lock.yaml (v9)', ok: true },
+        { code: 'pnpm-workspace.yaml', ok: true },
+        { code: '.pnpmfile.cjs', ok: true },
+        { code: '.npmrc', ok: true },
+        { code: 'package.json#pnpm', ok: true },
+        { code: 'resolutions', ok: true },
+        { code: 'catalog:', ok: true },
+        { code: 'workspace:', ok: true },
+        { code: 'workspaces', ok: true },
+        { code: 'dependenciesMeta.injected', ok: false },
+        { code: 'nodeLinker: pnp', ok: false },
+        { code: 'engines / os / cpu', ok: true },
+        { code: 'pnpm_config_*', ok: true },
+        { code: 'npm_config_*', ok: true },
+      ],
+    },
+    {
+      pm: 'Yarn',
+      items: [
+        { code: 'yarn.lock (read-only)', ok: true, partial: true },
+        { code: '.yarnrc.yml (registry, auth, linker)', ok: true, partial: true },
+        { code: '.yarnrc', ok: false },
+        { code: '.npmrc', ok: true },
+        { code: 'resolutions', ok: true },
+        { code: 'workspace:', ok: true },
+        { code: 'workspaces', ok: true },
+        { code: 'packageExtensions', ok: true },
+        { code: 'dependenciesMeta.built', ok: true },
+        { code: 'nodeLinker: pnp', ok: false },
+        { code: 'engines / os / cpu', ok: true },
+      ],
+    },
+    {
+      pm: 'Bun',
+      items: [
+        { code: 'bun.lock', ok: true },
+        { code: 'bun.lockb', ok: false },
+        { code: 'bunfig.toml (registry, scopes, linker)', ok: true, partial: true },
+        { code: '.npmrc', ok: true },
+        { code: 'trustedDependencies', ok: true },
+        { code: 'overrides', ok: true },
+        { code: 'resolutions', ok: true },
+        { code: 'patchedDependencies', ok: true },
+        { code: 'catalog:', ok: true },
+        { code: 'workspace:', ok: true },
+        { code: 'workspaces', ok: true },
+        { code: 'engines / os / cpu', ok: true },
+      ],
+    },
+    {
+      pm: 'nub',
+      items: [
+        { code: 'lock.yaml', ok: true },
+        { code: '.npmrc', ok: true },
+        { code: 'overrides', ok: true },
+        { code: 'resolutions', ok: true },
+        { code: 'patchedDependencies', ok: true },
+        { code: 'catalog:', ok: true },
+        { code: 'workspace:', ok: true },
+        { code: 'workspaces', ok: true },
+        { code: 'engines.node', ok: true },
+        { code: 'npm_config_*', ok: true },
+      ],
+    },
+  ]}
+/>
+
+Each incumbent has its own page with the full lockfile, config, and gaps detail: [pnpm](/docs/install/pnpm), [npm](/docs/install/npm), [Bun](/docs/install/bun), [Yarn](/docs/install/yarn).
 
 ## Lifecycle scripts
 
@@ -281,11 +362,11 @@ Files materialize into `node_modules` by reflink (APFS/btrfs), hardlink (ext4), 
 
 The default `node_modules` layout is **isolated**: direct dependencies sit at the top level, transitive packages link into a per-project virtual store, and phantom dependencies fail instead of resolving by accident. Nub's virtual store is `node_modules/.nub/` (pnpm uses `node_modules/.pnpm/`) — same shape, not byte-shared, so alternating tools relinks the tree.
 
-`--node-linker hoisted` produces a flat, npm-style layout instead. npm, Yarn, and Bun incumbents default to `hoisted`; pnpm and nub-identity projects keep `isolated`.
+Passing `--node-linker hoisted` produces a flat, npm-style layout instead. npm, Yarn, and Bun incumbents default to `hoisted`; pnpm and nub-identity projects keep `isolated`.
 
 ### Offline installs
 
-When the global store already holds every package, a warm install is mostly links into that shared store — no re-download, no re-copy — so it runs near-instantly, and offline.
+When the global store already holds every package, a warm install relinks files from that store into `node_modules` via reflink (APFS/btrfs) or hardlink (ext4) — no re-download, no byte-for-byte copy. This is why warm reinstalls are significantly faster: the store avoids redundant I/O regardless of which layout (`isolated` or `hoisted`) the project uses.
 
 ```bash
 nub install            # offline when the store already holds every package
