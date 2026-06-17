@@ -600,6 +600,26 @@ pub enum Command {
         /// Run as if started in <DIR> (the pnpm spelling of `--cwd`).
         #[arg(short = 'C', long = "dir", value_name = "DIR")]
         dir: Option<PathBuf>,
+
+        /// Scope to workspace packages matching PATTERN (repeatable). `-F` alias.
+        #[arg(short = 'F', long, value_name = "PATTERN")]
+        filter: Vec<String>,
+
+        /// Production-only variant of `--filter`.
+        #[arg(long, value_name = "PATTERN")]
+        filter_prod: Vec<String>,
+
+        /// Run across every workspace package (same as `--filter=*`).
+        #[arg(short = 'r', long)]
+        recursive: bool,
+
+        /// Error when a workspace selector matches no packages.
+        #[arg(long)]
+        fail_if_no_match: bool,
+
+        /// Include the workspace root in recursive operations.
+        #[arg(long)]
+        include_workspace_root: bool,
     },
 
     /// Clean install for CI: delete node_modules, install strictly from the
@@ -621,6 +641,26 @@ pub enum Command {
         /// Run as if started in <DIR> (the pnpm spelling of `--cwd`).
         #[arg(short = 'C', long = "dir", value_name = "DIR")]
         dir: Option<PathBuf>,
+
+        /// Scope to workspace packages matching PATTERN (repeatable). `-F` alias.
+        #[arg(short = 'F', long, value_name = "PATTERN")]
+        filter: Vec<String>,
+
+        /// Production-only variant of `--filter`.
+        #[arg(long, value_name = "PATTERN")]
+        filter_prod: Vec<String>,
+
+        /// Run across every workspace package (same as `--filter=*`).
+        #[arg(short = 'r', long)]
+        recursive: bool,
+
+        /// Error when a workspace selector matches no packages.
+        #[arg(long)]
+        fail_if_no_match: bool,
+
+        /// Include the workspace root in recursive operations.
+        #[arg(long)]
+        include_workspace_root: bool,
     },
 }
 
@@ -1505,6 +1545,11 @@ fn dispatch_subcommand(rest: Vec<String>) -> Result<i32> {
             node_linker,
             registry,
             dir,
+            filter,
+            filter_prod,
+            recursive,
+            fail_if_no_match,
+            include_workspace_root,
         }) => crate::pm_engine::run_install(crate::pm_engine::InstallFlags {
             frozen_lockfile,
             no_frozen_lockfile,
@@ -1520,17 +1565,36 @@ fn dispatch_subcommand(rest: Vec<String>) -> Result<i32> {
             node_linker,
             registry,
             dir,
+            filter: crate::pm_engine::WorkspaceFilterFlags {
+                filter,
+                filter_prod,
+                recursive,
+                fail_if_no_match,
+                include_workspace_root,
+            },
         }),
         Some(Command::Ci {
             ignore_scripts,
             no_optional,
             registry,
             dir,
+            filter,
+            filter_prod,
+            recursive,
+            fail_if_no_match,
+            include_workspace_root,
         }) => crate::pm_engine::run_ci(crate::pm_engine::CiFlags {
             ignore_scripts,
             no_optional,
             registry,
             dir,
+            filter: crate::pm_engine::WorkspaceFilterFlags {
+                filter,
+                filter_prod,
+                recursive,
+                fail_if_no_match,
+                include_workspace_root,
+            },
         }),
         // `node` is intercepted at the top of `dispatch_subcommand` (manual
         // sub-verb match in `run_node`) and never reaches clap here.
