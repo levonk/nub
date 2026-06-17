@@ -17,8 +17,8 @@
 #                     startup for the body; nub additionally avoids a SECOND
 #                     node startup for the dispatch, node --run does not.
 #
-# This is a canonical checked-in benchmark harness. Results are written as
-# hyperfine JSON under tests/bench/results/.
+# This is a canonical checked-in benchmark harness. By default, result JSON is
+# written to a temp directory; pass --save to update tests/bench/results/.
 #
 # Requires: hyperfine, node (>=22 for `node --run`), npm, pnpm; NUB env var or
 # target/release/nub.
@@ -33,24 +33,35 @@ case "$NUB" in
   */*) NUB="$(cd "$(dirname "$NUB")" 2>/dev/null && pwd)/$(basename "$NUB")" ;;
   *) NUB="$(command -v "$NUB" 2>/dev/null || true)" ;;
 esac
-RESULTS_DIR="$REPO_ROOT/tests/bench/results"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 # Defaults are screenshot-friendly. Increase these for publication-grade runs.
-WARMUP=20
+WARMUP=10
 RUNS=30
+PREWARM=10
 MAX_LOAD=999   # pass --max-load 2 for a quiet-box publication run
-FIXTURE_FILTER="both"
+FIXTURE_FILTER="true"
+TOOLS="core"
+SAVE_RESULTS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --warmup)   WARMUP="$2";          shift 2 ;;
     --runs)     RUNS="$2";            shift 2 ;;
+    --prewarm)  PREWARM="$2";         shift 2 ;;
     --max-load) MAX_LOAD="$2";        shift 2 ;;
     --fixture)  FIXTURE_FILTER="$2";  shift 2 ;;
+    --tools)    TOOLS="$2";           shift 2 ;;
+    --save)     SAVE_RESULTS=1;       shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
 case "$FIXTURE_FILTER" in true|node-e|both) ;; *) echo "ERROR: --fixture must be true, node-e, or both" >&2; exit 1 ;; esac
+case "$TOOLS" in core|all) ;; *) echo "ERROR: --tools must be core or all" >&2; exit 1 ;; esac
+if [[ "$SAVE_RESULTS" -eq 1 ]]; then
+  RESULTS_DIR="$REPO_ROOT/tests/bench/results"
+else
+  RESULTS_DIR="$(mktemp -d /tmp/nub-bench-results-XXXXXX)"
+fi
 
 [[ -x "$NUB" ]] || { echo "ERROR: nub not found at $NUB" >&2; exit 1; }
 command -v hyperfine &>/dev/null || { echo "ERROR: hyperfine not found." >&2; exit 1; }
@@ -117,17 +128,28 @@ echo "================================================================"
 echo "  nub run  vs  node --run  — script DISPATCH benchmark"
 echo "  nub:  $("$NUB" --version 2>&1 | head -1)"
 echo "  node: $(node --version)   npm: $(npm --version)   pnpm: $(pnpm --version)"
-echo "  warmup: $WARMUP  runs: $RUNS"
+echo "  tools: $TOOLS  prewarm: $PREWARM  hyperfine warmup: $WARMUP  runs: $RUNS  save: $([[ $SAVE_RESULTS -eq 1 ]] && echo yes || echo no)"
 echo "  date: $(date)"
 echo "  load@run (1-min): $LOAD_AT_RUN   full uptime: $(uptime)"
 echo "================================================================"
 echo "  Exit-0 verification (each command must dispatch the script):"
-for FIX in "$FIX_TRUE" "$FIX_NODE"; do
-  verify "nub run"   "$FIX" "$NUB" run noop
-  verify "node --run" "$FIX" node --run noop
-  verify "npm run"   "$FIX" npm run noop
-  verify "pnpm run"  "$FIX" pnpm run noop
-done
+verify_fixture() {
+  local fix="$1"
+  verify "nub run"    "$fix" "$NUB" run noop
+  verify "node --run" "$fix" node --run noop
+  if [[ "$TOOLS" == "all" ]]; then
+    verify "npm run"  "$fix" npm run noop
+    verify "pnpm run" "$fix" pnpm run noop
+  fi
+}
+case "$FIXTURE_FILTER" in
+  true)   verify_fixture "$FIX_TRUE" ;;
+  node-e) verify_fixture "$FIX_NODE" ;;
+  both)
+    verify_fixture "$FIX_TRUE"
+    verify_fixture "$FIX_NODE"
+    ;;
+esac
 echo "================================================================"
 
 mkdir -p "$RESULTS_DIR"
@@ -137,12 +159,29 @@ run_fixture() {  # $1=tag $2=dir
   local out="$RESULTS_DIR/script-runner-vs-node-${tag}-${TIMESTAMP}.json"
   echo ""
   echo "---- fixture: $tag  (script body: $(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["scripts"]["noop"])' "$dir/package.json")) ----"
-  hyperfine \
-    --warmup "$WARMUP" --runs "$RUNS" --export-json "$out" \
-    --command-name "nub run"    "cd '$dir' && '$NUB' run noop" \
-    --command-name "node --run" "cd '$dir' && node --run noop" \
-    --command-name "npm run"    "cd '$dir' && npm run noop" \
-    --command-name "pnpm run"   "cd '$dir' && pnpm run noop"
+  if [[ "$PREWARM" -gt 0 ]]; then
+    echo "  [prewarm] running each command $PREWARM times before hyperfine..."
+    for _ in $(seq 1 "$PREWARM"); do
+      ( cd "$dir" && "$NUB" run noop >/dev/null 2>&1 )
+      ( cd "$dir" && node --run noop >/dev/null 2>&1 )
+      if [[ "$TOOLS" == "all" ]]; then
+        ( cd "$dir" && npm run noop >/dev/null 2>&1 )
+        ( cd "$dir" && pnpm run noop >/dev/null 2>&1 )
+      fi
+    done
+  fi
+  local hyperfine_args=(
+    --warmup "$WARMUP" --runs "$RUNS" --export-json "$out"
+    --command-name "nub run" "cd '$dir' && '$NUB' run noop"
+    --command-name "node --run" "cd '$dir' && node --run noop"
+  )
+  if [[ "$TOOLS" == "all" ]]; then
+    hyperfine_args+=(
+      --command-name "npm run" "cd '$dir' && npm run noop"
+      --command-name "pnpm run" "cd '$dir' && pnpm run noop"
+    )
+  fi
+  hyperfine "${hyperfine_args[@]}"
   echo "  [results saved → $out]"
 }
 
@@ -157,6 +196,6 @@ esac
 
 echo ""
 echo "================================================================"
-echo "  Done. Canonical results in $RESULTS_DIR/script-runner-vs-node-*-${TIMESTAMP}.json"
+echo "  Results in $RESULTS_DIR/script-runner-vs-node-*-${TIMESTAMP}.json"
 echo "  load@run was: $LOAD_AT_RUN"
 echo "================================================================"

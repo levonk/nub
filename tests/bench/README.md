@@ -4,7 +4,7 @@ Apples-to-apples wall-clock comparison of `nub install` vs `pnpm install`, `bun 
 
 ## The benchmarks (read this first)
 
-Three benchmarks make up the suite. Run each on a QUIET machine (see the load warning below); the latest measured values live in the gitignored `tests/bench/RESULTS.md`.
+Three benchmarks make up the suite. Run each on a QUIET machine (see the load warning below). By default, benchmark scripts write per-run JSON to a temporary directory; pass `--save` only when you intentionally want to update the checked-in canonical JSON under `tests/bench/results/`. The latest measured summary can live in the gitignored `tests/bench/RESULTS.md`.
 
 | Benchmark | Script | What it measures |
 |-----------|--------|----------------|
@@ -35,9 +35,9 @@ NUB=… bash tests/bench/run-warm-gvs.sh --fixture gvs-eligible --runs 12 --warm
 
 ### Script-runner dispatch — `nub run` vs `node --run`
 
-The canonical script-runner benchmark measures how fast each tool looks up a `package.json` script and dispatches it. The checked-in script is a thin `hyperfine` wrapper: it creates temporary fixture projects, verifies every command exits 0 before timing, then runs `hyperfine` and writes JSON to `tests/bench/results/`.
+The canonical script-runner benchmark measures how fast each tool looks up a `package.json` script and dispatches it. The checked-in script is a thin `hyperfine` wrapper: it creates temporary fixture projects, verifies every command exits 0 before timing, then runs `hyperfine`. By default it writes JSON to a temp directory; pass `--save` to update `tests/bench/results/`.
 
-Each fixture is a no-dependency package with one script named `noop`. The benchmark runs that same script through each runner: `nub run noop`, `node --run noop`, `npm run noop`, and `pnpm run noop`.
+Each fixture is a no-dependency package with one script named `noop`. The default screenshot-friendly run compares `nub run noop` and `node --run noop`. Pass `--tools all` to include `npm run noop` and `pnpm run noop` in the same hyperfine run.
 
 The harness creates two fixture shapes:
 
@@ -100,10 +100,18 @@ For both fixtures in one pass, run:
 bash tests/bench/run-script-runner-vs-node.sh --fixture both
 ```
 
-For a publication-grade quiet-box run, raise the sample count and set a real load gate:
+To include npm and pnpm, run:
 
 ```bash
-bash tests/bench/run-script-runner-vs-node.sh --fixture true --runs 100 --warmup 30 --max-load 2
+bash tests/bench/run-script-runner-vs-node.sh --fixture true --tools all
+```
+
+The harness does an explicit prewarm pass before invoking `hyperfine`, then also passes `--warmup` to `hyperfine`. If you still see a first-run cache warning, the box is noisy; rerun when the load settles.
+
+For a publication-grade quiet-box run, raise the sample count, set a real load gate, and pass `--save` only if the result should become the checked-in canonical JSON:
+
+```bash
+bash tests/bench/run-script-runner-vs-node.sh --fixture true --runs 100 --prewarm 30 --warmup 30 --max-load 2 --save
 ```
 
 The wrapper runs this `hyperfine` shape for each fixture:
@@ -111,9 +119,14 @@ The wrapper runs this `hyperfine` shape for each fixture:
 ```bash
 hyperfine --warmup "$WARMUP" --runs "$RUNS" --export-json "$OUT" \
   --command-name "nub run"    "cd '$FIXTURE' && '$NUB' run noop" \
-  --command-name "node --run" "cd '$FIXTURE' && node --run noop" \
-  --command-name "npm run"    "cd '$FIXTURE' && npm run noop" \
-  --command-name "pnpm run"   "cd '$FIXTURE' && pnpm run noop"
+  --command-name "node --run" "cd '$FIXTURE' && node --run noop"
+```
+
+With `--tools all`, the wrapper adds:
+
+```bash
+  --command-name "npm run"  "cd '$FIXTURE' && npm run noop" \
+  --command-name "pnpm run" "cd '$FIXTURE' && pnpm run noop"
 ```
 
 The older `run-script-runner-pure.sh` and `run-script-runner.sh` harnesses are kept for historical comparisons against npm/pnpm-only runs; use `run-script-runner-vs-node.sh` for the published `node --run` comparison.

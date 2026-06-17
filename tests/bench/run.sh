@@ -26,7 +26,6 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NUB="$REPO_ROOT/target/release/nub"
 FIXTURE_DIR="$REPO_ROOT/tests/bench/fixtures"
-RESULTS_DIR="$REPO_ROOT/tests/bench/results"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 # Trash dir for rename-aside teardown. node_modules is mv'd here (fast) and a
@@ -39,16 +38,23 @@ RUN_WARM=1
 RUN_COLD=1
 MATERIALIZED=0
 FIXTURE_FILTER=""
+SAVE_RESULTS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cold-only)    RUN_WARM=0 ;;
     --warm-only)    RUN_COLD=0 ;;
     --materialized) MATERIALIZED=1 ;;
     --fixture)      shift; FIXTURE_FILTER="${1:-}" ;;
+    --save)         SAVE_RESULTS=1 ;;
     *) echo "WARN: unknown arg '$1'" >&2 ;;
   esac
   shift
 done
+if [[ "$SAVE_RESULTS" -eq 1 ]]; then
+  RESULTS_DIR="$REPO_ROOT/tests/bench/results"
+else
+  RESULTS_DIR="$(mktemp -d /tmp/nub-bench-results-XXXXXX)"
+fi
 
 HAS_BUN=0
 if command -v bun &>/dev/null; then HAS_BUN=1; fi

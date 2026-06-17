@@ -36,7 +36,6 @@ NUB="${NUB:-$REPO_ROOT/target/release/nub}"
 # to a fixture dir, so a relative NUB= override must still resolve.
 case "$NUB" in /*) ;; *) NUB="$(cd "$(dirname "$NUB")" 2>/dev/null && pwd)/$(basename "$NUB")" ;; esac
 FIXTURE_DIR="$REPO_ROOT/tests/bench/fixtures"
-RESULTS_DIR="$REPO_ROOT/tests/bench/results"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 TRASH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bench-warm-gvs-trash-$$-XXXXXX")"
@@ -45,14 +44,21 @@ trap 'rm -rf "$TRASH_DIR" 2>/dev/null || true' EXIT
 WARMUP=3
 RUNS=12
 FIXTURE_FILTER=""
+SAVE_RESULTS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --warmup) WARMUP="$2"; shift 2 ;;
     --runs)   RUNS="$2";   shift 2 ;;
     --fixture) FIXTURE_FILTER="$2"; shift 2 ;;
+    --save) SAVE_RESULTS=1; shift ;;
     *) echo "WARN: unknown arg '$1'" >&2; shift ;;
   esac
 done
+if [[ "$SAVE_RESULTS" -eq 1 ]]; then
+  RESULTS_DIR="$REPO_ROOT/tests/bench/results"
+else
+  RESULTS_DIR="$(mktemp -d /tmp/nub-bench-results-XXXXXX)"
+fi
 
 command -v hyperfine &>/dev/null || { echo "ERROR: hyperfine not found." >&2; exit 1; }
 command -v pnpm &>/dev/null || { echo "ERROR: pnpm not found." >&2; exit 1; }

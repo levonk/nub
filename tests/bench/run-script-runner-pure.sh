@@ -18,18 +18,24 @@ NUB="${NUB:-$REPO_ROOT/target/release/nub}"
 # cd's into a fixture dir, so a relative NUB= (e.g. target/release/nub) would
 # fail to resolve there. Tolerate either a relative or absolute override.
 case "$NUB" in /*) ;; *) NUB="$(cd "$(dirname "$NUB")" 2>/dev/null && pwd)/$(basename "$NUB")" ;; esac
-RESULTS_DIR="$REPO_ROOT/tests/bench/results"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 WARMUP=5
 RUNS=30
+SAVE_RESULTS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --warmup) WARMUP="$2"; shift 2 ;;
     --runs)   RUNS="$2";   shift 2 ;;
+    --save)   SAVE_RESULTS=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
+if [[ "$SAVE_RESULTS" -eq 1 ]]; then
+  RESULTS_DIR="$REPO_ROOT/tests/bench/results"
+else
+  RESULTS_DIR="$(mktemp -d /tmp/nub-bench-results-XXXXXX)"
+fi
 
 [[ -x "$NUB" ]] || { echo "ERROR: nub not found at $NUB" >&2; exit 1; }
 command -v hyperfine &>/dev/null || { echo "ERROR: hyperfine not found." >&2; exit 1; }

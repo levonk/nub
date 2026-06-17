@@ -17,18 +17,24 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NUB="$REPO_ROOT/target/release/nub"
-RESULTS_DIR="$REPO_ROOT/tests/bench/results"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
 WARMUP=5
 RUNS=20
+SAVE_RESULTS=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --warmup) WARMUP="$2"; shift 2 ;;
     --runs)   RUNS="$2";   shift 2 ;;
+    --save)   SAVE_RESULTS=1; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
+if [[ "$SAVE_RESULTS" -eq 1 ]]; then
+  RESULTS_DIR="$REPO_ROOT/tests/bench/results"
+else
+  RESULTS_DIR="$(mktemp -d /tmp/nub-bench-results-XXXXXX)"
+fi
 
 # ── Preflight ──────────────────────────────────────────────────────────────
 if [[ ! -x "$NUB" ]]; then
