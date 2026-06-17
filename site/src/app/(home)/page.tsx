@@ -524,7 +524,7 @@ import { host, port } from "./config.yaml" // named exports`}
                     nub transpiles via native addon (no second process) → ties node on a .ts file;
                     ~2.9× faster than tsx. Absolutes from a quiet M1 Max (re-cite from quiet box). */}
                 <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
-                  run a TypeScript file · macOS · hyperfine
+                  run a TypeScript file · macOS
                 </p>
                 <BenchBars
                   accent="ember"
@@ -701,7 +701,7 @@ function RunScriptBand() {
                     @ load 3.7 (27×); 356/25× is conservative. Decomposition: node bootstrap is only
                     ~11% of pnpm's per-call cost — the rest is the PM's own JS, NOT "node bootstrap". */}
                 <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
-                  echo noop · pure shell · macOS · hyperfine
+                  echo noop · pure shell · macOS
                 </p>
                 <BenchBars
                   accent="acid"
@@ -816,7 +816,7 @@ function NubxBand() {
                     esbuild (native Go binary, no Node boot) is the clean wrapper-speed measure.
                     Numbers: wiki/research/benchmark-credibility.md §4 (round 20× → ~19× npx / ~17× pnpm exec; re-cite from quiet box). */}
                 <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
-                  esbuild --version · macOS · hyperfine
+                  esbuild --version · macOS
                 </p>
                 <BenchBars
                   accent="sky"
@@ -1170,17 +1170,17 @@ function HypermanagerBand() {
                     node_modules wiped between runs. Bars are the arithmetic MEAN across all 24 timed runs
                     (12 per file): nub 1632 / bun 1717 / pnpm 4335 / npm 5997 ms. nub fastest by mean. */}
                 <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
-                  warm install · create-t3-app · 222 deps · macOS · hyperfine
+                  warm frozen install · create-t3-app · 222 deps · macOS
                 </p>
                 <BenchBars
                   accent="pink"
                   max={5997}
                   unit="ms"
                   rows={[
-                    { cmd: 'nub install', ms: 1632, us: true },
-                    { cmd: 'bun install', ms: 1717, label: '5% slower' },
-                    { cmd: 'pnpm install', ms: 4335, ratio: 2.7 },
-                    { cmd: 'npm ci', ms: 5997, ratio: 3.7 },
+                    { cmd: 'nub', ms: 1632, us: true },
+                    { cmd: 'bun', ms: 1717, label: '5% slower' },
+                    { cmd: 'pnpm', ms: 4335, ratio: 2.7 },
+                    { cmd: 'npm', ms: 5997, ratio: 3.7 },
                   ]}
                 />
                 <a

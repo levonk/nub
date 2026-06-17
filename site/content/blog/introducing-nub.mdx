@@ -65,7 +65,7 @@ Nub transpiles your code in memory with [oxc](https://oxc.rs) (compiled into a [
 The transpile costs nothing measurable: running a TypeScript file adds negligible overhead over plain `node`, and runs about 2.9× faster than `tsx` — while supporting the non-erasable syntax Node's stripper rejects:
 
 <Bench
-  label="hello.ts · hyperfine, 20 runs"
+  label="hello.ts · 20 runs"
   source="https://github.com/nubjs/nub/tree/main/benchmarks"
   accent="ember"
   max={128}
@@ -351,7 +351,7 @@ Both `pnpm` and `npm` are themselves Node.js programs: every `pnpm run <script>`
 **Script-runner overhead** — a pure-shell `echo` noop, so the figure isolates the runner's dispatch overhead, removing the per-call JS startup that `pnpm` and `npm` pay before your script's first byte:
 
 <Bench
-  label="echo noop · pure shell · hyperfine, 100 runs"
+  label="echo noop · pure shell · 100 runs"
   source="https://github.com/nubjs/nub/tree/main/benchmarks"
   accent="acid"
   max={356}
@@ -362,7 +362,7 @@ Both `pnpm` and `npm` are themselves Node.js programs: every `pnpm run <script>`
   ]}
 />
 
-The benchmarked script is identical on every row — the delta is pure wrapper overhead. Methodology: `hyperfine --warmup 3 --runs 100`, Apple M1 Max, Node 24.14.0 — the numbers are machine-specific, the ratios are the portable claim. Reproduce with [`benchmarks/`](https://github.com/nubjs/nub/tree/main/benchmarks).
+The benchmarked script is identical on every row — the delta is pure wrapper overhead. Methodology: 3 warmup runs, 100 timed runs, Apple M1 Max, Node 24.14.0 — the numbers are machine-specific, the ratios are the portable claim. Reproduce with [`benchmarks/`](https://github.com/nubjs/nub/tree/main/benchmarks).
 
 ### Workspace-aware
 
@@ -405,7 +405,7 @@ nubx tsc --noEmit
 The `.bin` walk-up happens in Rust and the binary is exec'd directly — no Node bootstrap in the wrapper, where `pnpm exec` and `npx` boot a full Node first. The binary is identical on both sides, so the entire delta is wrapper overhead:
 
 <Bench
-  label="esbuild --version · hyperfine, 20 runs"
+  label="esbuild --version · 20 runs"
   source="https://github.com/nubjs/nub/tree/main/benchmarks"
   accent="sky"
   max={226}
@@ -440,15 +440,15 @@ Second, on a pnpm project, support is complete: Nub reads and honors every confi
 Nub maintains a content-addressed store on disk — each package version lands once, identified by content hash. A warm reinstall reuses that store, reflink- or hardlink-copying files already on disk into `node_modules` instead of redownloading or recopying them. On a real [create-t3-app](https://create.t3.gg/) project that's about 3× faster than pnpm and faster than Bun:
 
 <Bench
-  label="warm install · create-t3-app · 222 deps · macOS · hyperfine"
+  label="warm frozen install · create-t3-app · 222 deps · macOS"
   source="https://github.com/nubjs/nub/tree/main/tests/bench"
   accent="pink"
   max={4732}
   rows={[
-    { cmd: 'nub install', ms: 974, us: true },
-    { cmd: 'bun install', ms: 1498, ratio: 1.54 },
-    { cmd: 'pnpm install', ms: 2743, ratio: 2.82 },
-    { cmd: 'npm ci', ms: 4732, ratio: 4.86 },
+    { cmd: 'nub', ms: 974, us: true },
+    { cmd: 'bun', ms: 1498, ratio: 1.54 },
+    { cmd: 'pnpm', ms: 2743, ratio: 2.82 },
+    { cmd: 'npm', ms: 4732, ratio: 4.86 },
   ]}
 />
 

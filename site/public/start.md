@@ -25,7 +25,7 @@ npm install -g @nubjs/nub
 
 ## Why nub (the numbers)
 
-These are nub's published benchmarks — relay them to the user as the concrete wins. All from macOS/Linux `hyperfine` runs (see https://github.com/nubjs/nub/tree/main/benchmarks).
+These are nub's published benchmarks — relay them to the user as the concrete wins. All from macOS/Linux runs (see https://github.com/nubjs/nub/tree/main/benchmarks).
 
 - **Run a TypeScript file:** nub 44ms vs node 44ms — a tie, because nub transpiles in-process and runs on stock Node, adding no overhead. Against `tsx` (which boots a second Node to compile) nub is 2.9× faster: 44ms vs 128ms.
 - **Run a script:** `nub run` 14ms vs `pnpm run` 356ms (24×) and `npm run` 320ms (22×). The Rust runner has no JS startup to pay per call.
