@@ -1,9 +1,9 @@
 ---
 title: Package meta-manager
-description: Provision and run the package manager your project pins — corepack's job, in native Rust. Pin a version and the exact pnpm, npm, or yarn release is fetched, verified, cached, and run on the project's Node.
+description: Provision and run the package manager your project pins — corepack's job, in native Rust. The exact pnpm, npm, or yarn release is fetched, verified, cached, and run on the project's Node.
 ---
 
-Nub reads your project's package-manager pin, downloads that exact version from the npm registry — integrity-verified before extraction, cached under `~/.cache/nub/pm` — and runs it under the project's Node. No corepack, no `enable` step, no baked version table: a Nub binary from six months ago provisions today's pnpm.
+Nub reads your project's package-manager pin, fetches that exact version from the npm registry — integrity-verified, cached under `~/.cache/nub/pm` — and runs it under the project's Node. No corepack, no `enable` step, no baked version table: a six-month-old Nub binary provisions today's pnpm.
 
 ```console
 $ nub pm which
@@ -18,14 +18,14 @@ The pin is read from two `package.json` fields at the workspace root, in order:
 1. **`packageManager`** — the corepack field. Exact only (`pnpm@9.15.4`, optionally `+sha512.<hash>`).
 2. **`devEngines.packageManager`** — `{ name, version }`; the version may be a range.
 
-The `packageManager` field must be exact — corepack, pnpm, and Yarn all reject ranges there; ranges belong in `devEngines`. With no pin in either field, there's nothing to provision: `nub pm which` errors and points at [`nub pm use`](#nub-pm-use). Nub never infers the pinned manager from a lockfile — an unpinned project has no resolved package manager, full stop.
+Ranges belong in `devEngines`; corepack, pnpm, and Yarn all reject them in `packageManager`. With no pin in either field, `nub pm which` errors and points at [`nub pm use`](#nub-pm-use). A lockfile never implies a pin.
 
 <Callout title="Multiple lockfiles">
-A project with two PMs' lockfiles side by side (`pnpm-lock.yaml` and `package-lock.json`) is ambiguous — Nub errors (`ERR_NUB_LOCKFILE_AMBIGUOUS`) rather than guess which manager owns it. Remove the stale one, or declare the pin with [`nub pm use`](#nub-pm-use).
+Two PMs' lockfiles side by side (`pnpm-lock.yaml` and `package-lock.json`) is ambiguous — Nub errors (`ERR_NUB_LOCKFILE_AMBIGUOUS`). Remove the stale one, or declare the pin with [`nub pm use`](#nub-pm-use).
 </Callout>
 
 <Callout title="Yarn Berry">
-A committed Berry release (`.yarnrc.yml` `yarnPath`) takes precedence over the pin fields above — an edge case, so it's omitted from the list; the `packageManager` field is the source you'll actually use. Nub runs the committed file directly and never provisions Berry, so a `yarn@2+` pin without a committed release is an error. Yarn classic (1.x) provisions like any other package manager.
+A committed Berry release (`.yarnrc.yml` `yarnPath`) wins over the pin fields above. Nub runs the committed file directly and never provisions Berry, so a `yarn@2+` pin without a committed release errors. Yarn classic (1.x) provisions like any other manager.
 </Callout>
 
 ## `nub pm which`
@@ -40,7 +40,7 @@ $ nub pm which
 
 ## `nub pm use`
 
-Declare the project's package manager — npm, pnpm, Yarn, or Bun. One command sets the identity and makes the artifacts agree: it resolves the version (exact, range, or dist-tag; bare means `latest`), fetches and verifies it, writes `packageManager`, and aligns the lockfile.
+Declare the project's package manager — npm, pnpm, Yarn, or Bun. One command resolves the version (exact, range, or dist-tag; bare means `latest`), fetches and verifies it, writes `packageManager`, and aligns the lockfile.
 
 ```bash
 nub pm use pnpm           # newest pnpm
@@ -62,15 +62,22 @@ using pnpm@11.5.3
 
 What it writes:
 
-- **`package.json#/packageManager`** — the exact version plus a `+sha512` hash computed from the verified tarball. This is what corepack, pnpm, and turbo execute, and `use` is the only Nub command that writes it.
+- **`package.json#/packageManager`** — the exact version plus a `+sha512` hash from the verified tarball. What corepack, pnpm, and turbo execute; `use` is the only Nub command that writes it.
 - **`package.json#/devEngines/packageManager`** — `{ name, version: "^<exact>", onFail: "warn" }`, the range-and-policy form npm and pnpm enforce natively, written beside the exact pin so the two can't drift.
-- **The lockfile, in the new manager's format.** An existing lockfile in another format is *converted* — resolution state preserved — and the old file removed. A lockfile already in the target format is left untouched; if there's no lockfile yet, none is written — the next install creates it. The converted lockfile passes the active manager's frozen install (`pnpm install --frozen-lockfile`, etc.) byte-for-byte.
+- **The lockfile, in the new manager's format.** A lockfile in another format is *converted* — resolution state preserved — and the old file removed. One already in the target format is left untouched; with no lockfile, the next install creates it. The converted lockfile passes the active manager's frozen install (`pnpm install --frozen-lockfile`, etc.) byte-for-byte.
 
 <Callout title="Config is not migrated">
-Switching managers converts the lockfile, not your configuration. The `.npmrc`, any `pnpm.*` fields, `pnpm-workspace.yaml` settings, and other manager-specific config stay exactly as they are — Nub does not translate them into the new manager's dialect. Carry over whatever the new manager needs yourself.
+Switching managers converts the lockfile, not your config. The `.npmrc`, any `pnpm.*` fields, `pnpm-workspace.yaml` settings, and other manager-specific config stay as they are — Nub does not translate them. Carry over whatever the new manager needs yourself.
 </Callout>
 
-Every file written or removed is named in the output; rerunning is a no-op. The refusals, all before anything is written: multiple foreign-format lockfiles (remove the stale ones first); a binary `bun.lockb` source (regenerate it as a text `bun.lock` with `bun install --save-text-lockfile` first); and `use yarn` in two cases it can't convert faithfully — an existing Berry (2+) `yarn.lock` (classic `use yarn` would downgrade the format; use `yarn set version` instead) and a graph that uses the `workspace:` protocol (classic yarn can't express it). A converting `use yarn` is otherwise fine — Nub writes a classic `yarn.lock` directly. Running `use bun` writes the pin and the lockfile but doesn't provision bun.
+Every file written or removed is named in the output; rerunning is a no-op. The refusals, all before anything is written:
+
+- **Multiple foreign-format lockfiles** — remove the stale ones first.
+- **A binary `bun.lockb` source** — regenerate it as text first with `bun install --save-text-lockfile`.
+- **`use yarn` onto a Berry (2+) `yarn.lock`** — classic would downgrade the format; use `yarn set version`.
+- **`use yarn` on a graph using the `workspace:` protocol** — classic yarn can't express it.
+
+A converting `use yarn` is otherwise fine — Nub writes a classic `yarn.lock` directly. Running `use bun` writes the pin and lockfile but doesn't provision bun.
 
 ## `nub pm update`
 
@@ -93,19 +100,19 @@ yarn@1.22.22
 $ nub pm cache clear
 ```
 
-Versions live at `~/.cache/nub/pm/<pm>/<version>`. An exact pin that's already cached runs fully offline — the registry is only contacted to resolve ranges and fetch missing versions. Provisioned package managers also run with a warm V8 compile cache (`NODE_COMPILE_CACHE`), so the PM's multi-megabyte bundle loads as cached bytecode instead of re-parsing on every call.
+Versions live at `~/.cache/nub/pm/<pm>/<version>`. A cached exact pin runs fully offline — the registry is only contacted to resolve ranges and fetch missing versions. Provisioned managers run with a warm V8 compile cache (`NODE_COMPILE_CACHE`), so the PM's multi-megabyte bundle loads as cached bytecode instead of re-parsing on every call.
 
 ## `.npmrc`
 
-The PM download — packument and tarball — goes through your `.npmrc`: `registry=` picks the mirror, `//host/:_authToken=` authenticates against it. An auth-required Artifactory/Nexus mirror works with the config you already have:
+The PM download — packument and tarball — goes through your `.npmrc`: `registry=` picks the mirror, `//host/:_authToken=` authenticates. An auth-required Artifactory/Nexus mirror works with the config you already have:
 
 ```ini
 registry=https://npm.corp.example
 //npm.corp.example/:_authToken=${CORP_NPM_TOKEN}
 ```
 
-To fetch package managers from a different registry than your dependencies, `COREPACK_NPM_REGISTRY` (+ `COREPACK_NPM_TOKEN`) overrides the PM-download registry specifically — teams migrating off corepack keep their existing CI vars.
+To fetch package managers from a different registry than your dependencies, `COREPACK_NPM_REGISTRY` (+ `COREPACK_NPM_TOKEN`) overrides the PM-download registry — teams migrating off corepack keep their existing CI vars.
 
 ## `nub pm shim`
 
-The shims are an opt-in: run `nub pm shim` and a bare `pnpm`, `npm`, or `yarn` command routes through Nub to the package manager your project pins, with `nub pm unshim` to remove them. Default usage needs none of this — `nub install` and `nub run` already run the pin. See [Package-manager shims](/docs/pm-shim) for the install, the strict-by-default refusal, and the per-invocation overhead.
+The shims are an opt-in: run `nub pm shim` and a bare `pnpm`, `npm`, or `yarn` command routes through Nub to the pinned manager, with `nub pm unshim` to remove them. Default usage needs none of this — `nub install` and `nub run` already run the pin. See [Package-manager shims](/docs/pm-shim) for the install, the strict-by-default refusal, and the per-invocation overhead.
