@@ -148,9 +148,9 @@ What Nub reads and writes keys off the project's incumbent package manager — i
       href: '/docs/install/npm',
       items: [
         {
-          code: 'package-lock.json (v2/v3)',
+          code: 'package-lock.json',
           ok: true,
-          note: 'Read and written in npm-incumbent projects. A lockfileVersion 1 file errors — re-run npm to upgrade it to v2/v3 first.',
+          note: 'Read and written in npm-incumbent projects, in lockfileVersion 2/3 format. A lockfileVersion 1 file errors — re-run npm to upgrade it to v2/v3 first.',
         },
         { code: 'npm-shrinkwrap.json', ok: true, note: 'Published-lockfile variant, read and written like package-lock.json.' },
         { code: '.npmrc', ok: true, note: 'Full project + user + global + builtin cascade: registry, scoped registries, auth tokens, cafile / ca / strict-ssl, and proxies.' },
@@ -164,7 +164,7 @@ What Nub reads and writes keys off the project's incumbent package manager — i
       pm: 'pnpm',
       href: '/docs/install/pnpm',
       items: [
-        { code: 'pnpm-lock.yaml (v9)', ok: true, note: 'Read and written in pnpm-incumbent projects, in pnpm’s native v9 format.' },
+        { code: 'pnpm-lock.yaml', ok: true, note: 'Read and written in pnpm-incumbent projects, in pnpm’s native v9 format.' },
         { code: 'pnpm-workspace.yaml', ok: true },
         { code: '.pnpmfile.cjs', ok: true },
         { code: '.npmrc', ok: true },

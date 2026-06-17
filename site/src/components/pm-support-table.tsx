@@ -105,10 +105,11 @@ function Chip({ code, ok, partial, note }: PmItem) {
   if (!note) return chip;
   // Reveal the breakdown on hover/focus via a CSS-only `group` + `group-hover`/
   // `group-focus-within` tooltip, mirroring the per-PM CompatTable pattern. The
-  // wrapper is focusable and carries a native `title` so it's reachable by
-  // pointer, keyboard, and screen readers alike.
+  // wrapper is focusable, and the sr-only text inside the chip carries the note
+  // for screen readers. No native `title` — it would double up with the custom
+  // popover on hover.
   return (
-    <span className="group relative inline-flex" tabIndex={0} title={note}>
+    <span className="group relative inline-flex" tabIndex={0}>
       {chip}
       <span
         role="tooltip"

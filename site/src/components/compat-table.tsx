@@ -96,9 +96,10 @@ function StatusGlyph({
 }) {
   const { color, label, icon } = STATUS_META[status];
   // Surface the note on hover/focus whenever the row has one (not just amber):
-  // a CSS-only reveal (`group` + `group-hover`/`group-focus-within`) plus the
-  // native `title` and sr-only text, so it's reachable by pointer, keyboard,
-  // and screen readers. The wrapper is focusable so keyboard users get it too.
+  // a CSS-only reveal (`group` + `group-hover`/`group-focus-within`) plus
+  // sr-only text, so it's reachable by pointer, keyboard, and screen readers.
+  // The wrapper is focusable so keyboard users get it too. No native `title` —
+  // it would double up with the custom popover on hover.
   const hasTip = !!tooltip;
   const glyph = (
     <span
@@ -120,7 +121,6 @@ function StatusGlyph({
     <span
       className="group relative inline-flex"
       tabIndex={0}
-      title={tooltip}
     >
       {glyph}
       <span
