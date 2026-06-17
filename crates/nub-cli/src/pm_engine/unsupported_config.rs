@@ -282,7 +282,7 @@ pub(crate) fn scan_unsupported_config(
 fn scan_fatal(role: Role, root: &Path) -> Option<FatalField> {
     match role {
         Role::Npm => {
-            if npmrc_bool_set(root, "legacy-peer-deps") {
+            if npmrc_project_bool_set(root, "legacy-peer-deps") {
                 return Some(FatalField {
                     code: "ERR_NUB_UNSUPPORTED_CONFIG",
                     field: "`legacy-peer-deps`",
@@ -292,7 +292,7 @@ fn scan_fatal(role: Role, root: &Path) -> Option<FatalField> {
                              or pin the conflicting versions in `overrides`",
                 });
             }
-            if let Some(strategy) = npmrc_value(root, "install-strategy")
+            if let Some(strategy) = npmrc_project_value(root, "install-strategy")
                 && strategy.eq_ignore_ascii_case("nested")
             {
                 return Some(FatalField {
@@ -400,9 +400,24 @@ fn yarnrc_top_level_bool_str(root: &Path, key: &str) -> Option<bool> {
 
 /// `.npmrc` files in precedence-low-to-high order: user `~/.npmrc` first, then
 /// project `.npmrc` (walk from root up to filesystem root). Later entries win.
+/// Used for the dep-selection IMPLEMENT-win, where global `omit`/`include`
+/// genuinely participate (it only seeds a default a CLI flag overrides, matching
+/// npm's own precedence).
 fn npmrc_paths(root: &Path) -> Vec<PathBuf> {
+    npmrc_paths_inner(root, true)
+}
+
+/// PROJECT-SCOPED `.npmrc` files only: the walk from `root` up to the filesystem
+/// root, EXCLUDING the user/global `~/.npmrc`. This is what the FATAL scan must
+/// read from — a personal global setting (`legacy-peer-deps=true` in `~/.npmrc`)
+/// must never abort an unrelated project's install.
+fn npmrc_project_paths(root: &Path) -> Vec<PathBuf> {
+    npmrc_paths_inner(root, false)
+}
+
+fn npmrc_paths_inner(root: &Path, include_global: bool) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    if let Some(home) = dirs_next::home_dir() {
+    if include_global && let Some(home) = dirs_next::home_dir() {
         paths.push(home.join(".npmrc"));
     }
     // Walk-up: ancestors first (less specific) so the project's own .npmrc wins.
@@ -416,14 +431,21 @@ fn npmrc_paths(root: &Path) -> Vec<PathBuf> {
     }
     dirs.reverse();
     paths.extend(dirs.into_iter().map(|d| d.join(".npmrc")));
+    // Defensive: if the project walk-up reaches the home dir, that surfaces the
+    // user `~/.npmrc` even in project-scoped mode (e.g. a package.json directly
+    // in $HOME). The FATAL scan must not see the global file, so drop it.
+    if !include_global && let Some(home) = dirs_next::home_dir() {
+        let global = home.join(".npmrc");
+        paths.retain(|p| p != &global);
+    }
     paths
 }
 
-/// Read a scalar `.npmrc` key from across all `.npmrc` files (project wins).
-fn npmrc_value(root: &Path, key: &str) -> Option<String> {
+/// Read a scalar `.npmrc` key across the given paths (later wins).
+fn npmrc_value_in(paths: &[PathBuf], key: &str) -> Option<String> {
     let mut value = None;
-    for path in npmrc_paths(root) {
-        if let Ok(content) = std::fs::read_to_string(&path)
+    for path in paths {
+        if let Ok(content) = std::fs::read_to_string(path)
             && let Some(v) = npmrc_scalar(&content, key)
         {
             value = Some(v);
@@ -432,14 +454,26 @@ fn npmrc_value(root: &Path, key: &str) -> Option<String> {
     value
 }
 
-/// Whether a boolean `.npmrc` key is set truthy (`key=true`, or bare `key`).
-fn npmrc_bool_set(root: &Path, key: &str) -> bool {
-    npmrc_value(root, key)
+fn npmrc_bool_set_in(paths: &[PathBuf], key: &str) -> bool {
+    npmrc_value_in(paths, key)
         .map(|v| {
             let v = v.trim();
             v.is_empty() || v.eq_ignore_ascii_case("true")
         })
         .unwrap_or(false)
+}
+
+/// Read a scalar `.npmrc` key from PROJECT-SCOPED `.npmrc` files only (the
+/// project tree walk-up, excluding `~/.npmrc`). Used by the FATAL scan.
+fn npmrc_project_value(root: &Path, key: &str) -> Option<String> {
+    npmrc_value_in(&npmrc_project_paths(root), key)
+}
+
+/// Whether a boolean `.npmrc` key is set truthy (`key=true`, or bare `key`) in
+/// PROJECT-SCOPED `.npmrc` files only. Used by the FATAL scan — a global
+/// `~/.npmrc` setting must never trip a project's install.
+fn npmrc_project_bool_set(root: &Path, key: &str) -> bool {
+    npmrc_bool_set_in(&npmrc_project_paths(root), key)
 }
 
 /// Parse a single scalar key from `.npmrc` content (ini-style `key=value`,
@@ -859,6 +893,78 @@ mod tests {
             ScanResult::Warn(w) => assert!(w.is_empty(), "supported config must not warn: {w:?}"),
             ScanResult::Fatal(e) => panic!("supported config tripped FATAL: {e}"),
         }
+    }
+
+    /// PRIORITY-1 regression: a `legacy-peer-deps=true` in the user/global
+    /// `~/.npmrc` must NOT trip the FATAL scan for an unrelated project — a
+    /// personal global setting may not abort every install. The project's own
+    /// `.npmrc` setting MUST still be fatal.
+    ///
+    /// `dirs_next::home_dir()` reads `$HOME`; point it at a temp dir holding a
+    /// global `.npmrc`, and put the project under a SEPARATE temp dir so the
+    /// project walk-up never reaches the fake home.
+    #[test]
+    fn global_npmrc_legacy_peer_deps_does_not_trip_fatal() {
+        let home = tmp();
+        let project = tmp();
+        fs::write(home.path().join(".npmrc"), "legacy-peer-deps=true\n").unwrap();
+
+        // SAFETY: single-threaded test; restored before returning.
+        let prev_home = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+
+        let global_only = scan_unsupported_config(Role::Npm, Some(10), None, project.path());
+        let global_is_fatal = matches!(global_only, ScanResult::Fatal(_));
+
+        // Now the SAME key in the PROJECT .npmrc — must be fatal.
+        fs::write(project.path().join(".npmrc"), "legacy-peer-deps=true\n").unwrap();
+        let project_set = scan_unsupported_config(Role::Npm, Some(10), None, project.path());
+        let project_is_fatal = matches!(project_set, ScanResult::Fatal(_));
+
+        // Restore $HOME before asserting so a panic can't leak it.
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        assert!(
+            !global_is_fatal,
+            "a global ~/.npmrc legacy-peer-deps must NOT abort an unrelated project"
+        );
+        assert!(
+            project_is_fatal,
+            "a project ./.npmrc legacy-peer-deps MUST be fatal"
+        );
+    }
+
+    /// Companion: `install-strategy=nested` in the global `~/.npmrc` is likewise
+    /// not project-fatal, while the project spelling is.
+    #[test]
+    fn global_npmrc_install_strategy_does_not_trip_fatal() {
+        let home = tmp();
+        let project = tmp();
+        fs::write(home.path().join(".npmrc"), "install-strategy=nested\n").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", home.path());
+        }
+        let global_only = scan_unsupported_config(Role::Npm, None, None, project.path());
+        let global_is_fatal = matches!(global_only, ScanResult::Fatal(_));
+        unsafe {
+            match prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+        assert!(
+            !global_is_fatal,
+            "a global ~/.npmrc install-strategy=nested must NOT abort an unrelated project"
+        );
     }
 
     #[test]
