@@ -300,6 +300,17 @@ fn finish(result: miette::Result<()>) -> Result<i32> {
     }
 }
 
+/// Same exit contract as [`finish`], for engine verbs that return an
+/// explicit exit code (`process-exit-sweep`): `Some(code)` is the engine's
+/// chosen code, `None` is plain success (0), `Err` renders via the
+/// presentation layer + the engine's exit table.
+fn finish_code(result: miette::Result<Option<i32>>) -> Result<i32> {
+    match result {
+        Ok(code) => Ok(code.unwrap_or(0)),
+        Err(report) => Ok(present::emit_report(&report)),
+    }
+}
+
 // ───────────────────────── wired verbs ──────────────────────────
 
 fn run_add(typed: &str, args: &[String]) -> Result<i32> {
@@ -355,7 +366,7 @@ fn run_update(typed: &str, args: &[String]) -> Result<i32> {
             &yarn_remedy("upgrade", &verb.packages),
         ));
     }
-    finish(session.runtime.block_on(aube::commands::update::run(
+    finish_code(session.runtime.block_on(aube::commands::update::run(
         verb,
         globals.effective_filter(),
     )))
@@ -470,7 +481,7 @@ fn run_dlx(typed: &str, args: &[String]) -> Result<i32> {
     let session = super::engine_session(globals.dir.as_deref())?;
     // NOTE: on child failure the engine propagates the child's exit code via
     // std::process::exit — control does not return here on that path.
-    finish(session.runtime.block_on(aube::commands::dlx::run(verb)))
+    finish_code(session.runtime.block_on(aube::commands::dlx::run(verb)))
 }
 
 /// DLX fallback for the `nubx <tool> [args]` entry point: the bin was absent
@@ -492,7 +503,7 @@ pub fn run_dlx_for_nubx(bin: &str, args: &[String]) -> Result<i32> {
     let session = super::engine_session(None)?;
     // NOTE: on child failure the engine propagates the child's exit code via
     // std::process::exit — control does not return here on that path.
-    finish(session.runtime.block_on(aube::commands::dlx::run(verb)))
+    finish_code(session.runtime.block_on(aube::commands::dlx::run(verb)))
 }
 
 /// Build the `dlx` invocation for a `nubx <tool> [args]` fallback: `<tool>` is
@@ -533,7 +544,7 @@ fn run_create(typed: &str, args: &[String]) -> Result<i32> {
     // The engine maps the template to its create-* package (foo → create-foo,
     // @scope/foo → @scope/create-foo) and chains into dlx; like dlx, on child
     // failure the engine propagates the exit code via std::process::exit.
-    finish(session.runtime.block_on(aube::commands::create::run(verb)))
+    finish_code(session.runtime.block_on(aube::commands::create::run(verb)))
 }
 
 // ───────────────────────── patch workflow ──────────────────────────
@@ -792,6 +803,9 @@ pub struct InstallFlags {
     pub node_linker: Option<String>,
     pub registry: Option<String>,
     pub dir: Option<std::path::PathBuf>,
+    /// Workspace selectors (`--filter`/`-r`/…), routed through the same
+    /// `EffectiveFilter` path the registry verbs (`add`/`remove`/`update`) use.
+    pub filter: WorkspaceFilterFlags,
 }
 
 /// `nub ci` flags. `ci` is frozen + clean by definition, so only the script /
@@ -803,6 +817,39 @@ pub struct CiFlags {
     pub no_optional: bool,
     pub registry: Option<String>,
     pub dir: Option<std::path::PathBuf>,
+    /// Workspace selectors (`--filter`/`-r`/…) — same path as `install`.
+    pub filter: WorkspaceFilterFlags,
+}
+
+/// The workspace-selection flags nub honors on `install`/`ci`, mirroring the
+/// [`EngineGlobals`] subset the registry verbs already expose. Lives here (not
+/// in cli.rs) so the [`WorkspaceFilterFlags::effective_filter`] desugaring is
+/// one definition the install/ci path shares with the engine-verb path.
+#[derive(Debug, Default)]
+pub struct WorkspaceFilterFlags {
+    pub filter: Vec<String>,
+    pub filter_prod: Vec<String>,
+    pub recursive: bool,
+    pub fail_if_no_match: bool,
+    pub include_workspace_root: bool,
+}
+
+impl WorkspaceFilterFlags {
+    /// Mirror of aube's `compute_effective_filter` (and [`EngineGlobals`]):
+    /// `-r` is sugar for `--filter=*`, a no-op when an explicit selector is
+    /// already present.
+    fn effective_filter(&self) -> EffectiveFilter {
+        let mut filters = self.filter.clone();
+        if self.recursive && filters.is_empty() && self.filter_prod.is_empty() {
+            filters.push("*".to_string());
+        }
+        EffectiveFilter {
+            filters,
+            filter_prods: self.filter_prod.clone(),
+            fail_if_no_match: self.fail_if_no_match,
+            include_workspace_root: self.include_workspace_root,
+        }
+    }
 }
 
 /// `nub install` — route through the embedded aube install engine.
@@ -836,6 +883,11 @@ pub fn run_install(flags: InstallFlags) -> Result<i32> {
 
     // yaml_prefer_frozen: None — see KNOWN APPROXIMATIONS in the module doc.
     let mut opts = args.into_options(global_frozen, None, cli_flags, super::env_snapshot());
+    // Workspace scoping (`--filter`/`-r`/…) rides the engine's own
+    // `workspace_filter` — the same field `aube install --filter` sets in
+    // `run_install_command` (vendor/aube lib.rs) and feeds to
+    // `discover_workspace_plan`.
+    opts.workspace_filter = flags.filter.effective_filter();
 
     let yarn = yarn_detected(&session);
     if yarn {
@@ -924,6 +976,9 @@ pub fn run_ci(flags: CiFlags) -> Result<i32> {
         env_snapshot: super::env_snapshot(),
         // `nub ci` is the argumentless-install shape: root lifecycle hooks run.
         skip_root_lifecycle: false,
+        // Workspace scoping (`--filter`/`-r`/…) — same `workspace_filter`
+        // channel as `run_install`, into `discover_workspace_plan`.
+        workspace_filter: flags.filter.effective_filter(),
         ..InstallOptions::with_mode(FrozenMode::Frozen)
     };
 

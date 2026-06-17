@@ -275,6 +275,16 @@ fn finish(result: miette::Result<()>) -> Result<i32> {
     }
 }
 
+/// Same exit contract as [`finish`], for engine verbs that return an explicit
+/// exit code (`process-exit-sweep`): `Some(code)` is the engine's chosen code,
+/// `None` is plain success (0), `Err` renders via the presentation layer.
+fn finish_code(result: miette::Result<Option<i32>>) -> Result<i32> {
+    match result {
+        Ok(code) => Ok(code.unwrap_or(0)),
+        Err(report) => Ok(present::emit_report(&report)),
+    }
+}
+
 // ── wired verbs ─────────────────────────────────────────────────────────────
 
 fn run_list(typed: &str, args: &[String], force_long: bool) -> Result<i32> {
@@ -336,7 +346,7 @@ fn run_outdated(typed: &str, args: &[String]) -> Result<i32> {
     if let Some(code) = no_lockfile_short_circuit(root, MSG_FIRST)? {
         return Ok(code);
     }
-    finish(
+    finish_code(
         session
             .runtime
             .block_on(aube::commands::outdated::run(cli.args, filter)),
@@ -385,7 +395,7 @@ fn run_audit(typed: &str, args: &[String]) -> Result<i32> {
     }
     // Missing lockfile is a miette error here (`load_graph`), not a direct
     // eprintln — the presentation rewrite covers it; no pre-flight needed.
-    finish(
+    finish_code(
         session
             .runtime
             .block_on(aube::commands::audit::run(cli.args)),
@@ -435,7 +445,7 @@ fn run_peers(typed: &str, args: &[String]) -> Result<i32> {
     };
     let session = super::engine_session_quiet(cli.dir.as_deref())?;
     // Missing lockfile is a miette error (`load_graph`) — rewrite covers it.
-    finish(
+    finish_code(
         session
             .runtime
             .block_on(aube::commands::peers::run(cli.args)),
@@ -475,7 +485,7 @@ fn run_check(typed: &str, args: &[String]) -> Result<i32> {
     // rather than erroring, so no pre-flight applies. Broken links exit 1
     // via std::process::exit inside the engine (pnpm-compat), like
     // outdated/audit.
-    finish(
+    finish_code(
         session
             .runtime
             .block_on(aube::commands::check::run(cli.args)),
