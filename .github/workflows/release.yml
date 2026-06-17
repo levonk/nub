@@ -606,22 +606,72 @@ jobs:
           fi
           echo "✓ linux-x64 binary runs on bookworm/glibc-2.36 — floor is low enough for slim images"
 
-  publish:
+  pre-publish-gate:
+    # Smoke the FRESHLY-BUILT artifact BEFORE anything is published, so a broken
+    # build (one that builds + links but can't actually run / reports the wrong
+    # version) FAILS THE RELEASE here instead of after npm has the bits. Distinct
+    # from glibc-floor-guard (which proves the binary *links* on an old glibc):
+    # this gate proves the binary RUNS and self-reports the EXACT release version,
+    # asserting `nub --version` == the tag. `publish-npm` needs: this job, so a
+    # version-mismatch or non-runnable binary blocks publish. Cheap: one host-arch
+    # leg (linux-x64) on the bare runner — no install, just exec the staged binary.
+    name: Pre-publish smoke gate (built linux-x64)
+    if: ${{ github.event_name == 'push' || inputs.publish }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download linux-x64 platform package
+        uses: actions/download-artifact@v4
+        with:
+          name: nub-linux-x64
+          path: nub-linux-x64
+      - name: Assert the built binary runs and reports the release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="nub-linux-x64/bin/nub"
+          # The upload→download artifact round-trip strips the +x mode bit.
+          chmod +x "$BIN" nub-linux-x64/bin/nubx
+          REPORTED="$("$BIN" --version 2>&1 | tr -d '[:space:]')"
+          echo "binary reports: '$REPORTED'"
+          # On a tag push the expected version is the tag (minus the leading v); on a
+          # manual publish dispatch there's no tag, so just assert it runs + prints a
+          # non-empty semver-ish string.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            EXPECTED="${GITHUB_REF_NAME#v}"
+            if [ "$REPORTED" != "$EXPECTED" ]; then
+              echo "::error::built linux-x64 binary reports version '$REPORTED' but the release tag is '$EXPECTED'. A broken/stale build must not publish."
+              exit 1
+            fi
+            echo "✓ built binary reports the release version ($EXPECTED) — safe to publish"
+          else
+            if [ -z "$REPORTED" ]; then
+              echo "::error::built linux-x64 binary produced no --version output — refusing to publish a non-runnable build."
+              exit 1
+            fi
+            echo "✓ built binary runs and reports version '$REPORTED' (dispatch — no tag to match)"
+          fi
+
+  publish-npm:
     name: Publish to npm
     # Only publish on a real tag push, or a manual dispatch that explicitly opts in.
     # A plain `workflow_dispatch` (publish=false) runs verify+test+build (incl. the
     # platform-package assemble) for CI debugging and stops there — nothing is
-    # published and no GitHub release is cut. Skipping publish also skips
-    # test-install (it `needs: publish`).
+    # published and no GitHub release is cut.
+    #
+    # SPLIT from the GitHub-release step (now its own `github-release` job) so a
+    # flaky asset upload no longer leaves npm published but the release half-built
+    # (the v0.0.48 failure: npm went out, then the gh-release asset upload died at
+    # 9/16 archives → curl-install 404'd on 3 platforms). publish-npm does ONLY the
+    # 10-package npm publish; github-release does ONLY the release + assets and is
+    # independently re-runnable.
     if: ${{ github.event_name == 'push' || inputs.publish }}
-    # Gate on the test, conformance, AND glibc-floor jobs too: a broken test, a
-    # lockfile-compat regression, or a glibc-floor regression must block the
-    # release, not just a broken build. (The conformance gate is what 0.0.35/0.0.36
-    # slipped through — they published with the real-PM lockfile suite RED
-    # because it only lived in a separate, non-gating workflow; the glibc-floor
-    # gate is what 0.0.44 slipped through — a GLIBC_2.39 linux-x64 binary that
-    # failed on every slim image, with test-install green on glibc-2.39 hosts.)
-    needs: [build, test, conformance, glibc-floor-guard]
+    # Gate on the test, conformance, glibc-floor, AND pre-publish smoke jobs: a
+    # broken test, a lockfile-compat regression, a glibc-floor regression, or a
+    # build that can't run / reports the wrong version must block publish — not
+    # just a failed compile. (conformance = the 0.0.35/0.0.36 gap; glibc-floor =
+    # the 0.0.44 gap; pre-publish-gate = a build that links but doesn't run.)
+    needs: [build, test, conformance, glibc-floor-guard, pre-publish-gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -635,6 +685,107 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Publishing version: $VERSION"
+
+      - name: Prepare and publish platform packages (idempotent)
+        run: |
+          # IDEMPOTENT publish: a re-run of this job (after a partial publish, or
+          # after github-release failed and the whole run is retried) must NOT
+          # hard-fail on a package that's already on the registry. Check
+          # `npm view <pkg>@<version> version` first and skip the ones already
+          # published, publishing only the missing ones. This makes publish-npm
+          # safely re-runnable: npm itself errors with E403 "cannot publish over
+          # previously published version", which would otherwise abort the loop.
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-x64-musl linux-arm64 linux-arm64-musl win32-x64 win32-arm64; do
+            PKG="artifacts/nub-$platform"
+            if [ ! -d "$PKG" ]; then
+              echo "⚠️  Skipping $platform (not built)"
+              continue
+            fi
+            # Copy package.json from source and set version
+            cp "npm/nub-$platform/package.json" "$PKG/package.json"
+            node -e "
+              const fs = require('fs');
+              const p = JSON.parse(fs.readFileSync('$PKG/package.json', 'utf8'));
+              p.version = '${{ env.VERSION }}';
+              fs.writeFileSync('$PKG/package.json', JSON.stringify(p, null, 2));
+            "
+            NAME="@nubjs/nub-$platform"
+            if [ "$(npm view "$NAME@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+              echo "✓ $NAME@$VERSION already published — skipping"
+              continue
+            fi
+            echo "→ $NAME@$VERSION"
+            (cd "$PKG" && npm publish --access public)
+          done
+
+      - name: Prepare and publish root package (idempotent)
+        run: |
+          # Update version in root package + optionalDependencies
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('npm/nub/package.json', 'utf8'));
+            p.version = '${{ env.VERSION }}';
+            for (const k of Object.keys(p.optionalDependencies || {})) {
+              p.optionalDependencies[k] = '${{ env.VERSION }}';
+            }
+            fs.writeFileSync('npm/nub/package.json', JSON.stringify(p, null, 2));
+          "
+          if [ "$(npm view "@nubjs/nub@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "✓ @nubjs/nub@$VERSION already published — skipping"
+          else
+            echo "→ @nubjs/nub@$VERSION"
+            (cd npm/nub && npm publish --access public)
+          fi
+
+      - name: Prepare and publish types package (idempotent)
+        run: |
+          # Package #10: @nubjs/types — the types-only ambient-declarations package.
+          # Tracks the binary's version in LOCKSTEP (set from the tag here; kept
+          # consistent by `make version` + the version-check gate). Publishes via npm
+          # OIDC trusted publishing (configured on npm 2026-06-14 — repo nubjs/nub,
+          # this workflow; no token). Standalone devDep, not in nub's optionalDependencies.
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('npm/nub-types/package.json', 'utf8'));
+            p.version = '${{ env.VERSION }}';
+            fs.writeFileSync('npm/nub-types/package.json', JSON.stringify(p, null, 2) + '\n');
+          "
+          if [ "$(npm view "@nubjs/types@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "✓ @nubjs/types@$VERSION already published — skipping"
+          else
+            echo "→ @nubjs/types@$VERSION"
+            (cd npm/nub-types && npm publish --access public)
+          fi
+
+  github-release:
+    name: Create GitHub Release (+ verify assets)
+    # SEPARATE from publish-npm so it is INDEPENDENTLY RE-RUNNABLE: a flaky asset
+    # upload can be re-run without re-attempting `npm publish` (which would E403
+    # over the now-existing version). It rebuilds the archives from the build
+    # artifacts (deterministic), creates/updates the release, then VERIFIES all 16
+    # expected assets are present — re-uploading any missing and FAILING LOUD if a
+    # gap survives the retries. This codifies the v0.0.48 manual fix.
+    if: ${{ github.event_name == 'push' || inputs.publish }}
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Package release archives (binary + runtime)
         run: |
@@ -670,67 +821,11 @@ jobs:
           done
           ls -la release-archives
 
-      - name: Set version from tag
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Publishing version: $VERSION"
-
-      - name: Prepare and publish platform packages
-        run: |
-          for platform in darwin-arm64 darwin-x64 linux-x64 linux-x64-musl linux-arm64 linux-arm64-musl win32-x64 win32-arm64; do
-            PKG="artifacts/nub-$platform"
-            if [ ! -d "$PKG" ]; then
-              echo "⚠️  Skipping $platform (not built)"
-              continue
-            fi
-            # Copy package.json from source and set version
-            cp "npm/nub-$platform/package.json" "$PKG/package.json"
-            node -e "
-              const fs = require('fs');
-              const p = JSON.parse(fs.readFileSync('$PKG/package.json', 'utf8'));
-              p.version = '${{ env.VERSION }}';
-              fs.writeFileSync('$PKG/package.json', JSON.stringify(p, null, 2));
-            "
-            echo "→ @nubjs/nub-$platform@$VERSION"
-            (cd "$PKG" && npm publish --access public)
-          done
-
-      - name: Prepare and publish root package
-        run: |
-          # Update version in root package + optionalDependencies
-          node -e "
-            const fs = require('fs');
-            const p = JSON.parse(fs.readFileSync('npm/nub/package.json', 'utf8'));
-            p.version = '${{ env.VERSION }}';
-            for (const k of Object.keys(p.optionalDependencies || {})) {
-              p.optionalDependencies[k] = '${{ env.VERSION }}';
-            }
-            fs.writeFileSync('npm/nub/package.json', JSON.stringify(p, null, 2));
-          "
-          echo "→ @nubjs/nub@$VERSION"
-          (cd npm/nub && npm publish --access public)
-
-      - name: Prepare and publish types package
-        run: |
-          # Package #10: @nubjs/types — the types-only ambient-declarations package.
-          # Tracks the binary's version in LOCKSTEP (set from the tag here; kept
-          # consistent by `make version` + the version-check gate). Publishes via npm
-          # OIDC trusted publishing (configured on npm 2026-06-14 — repo nubjs/nub,
-          # this workflow; no token). Standalone devDep, not in nub's optionalDependencies.
-          node -e "
-            const fs = require('fs');
-            const p = JSON.parse(fs.readFileSync('npm/nub-types/package.json', 'utf8'));
-            p.version = '${{ env.VERSION }}';
-            fs.writeFileSync('npm/nub-types/package.json', JSON.stringify(p, null, 2) + '\n');
-          "
-          echo "→ @nubjs/types@$VERSION"
-          (cd npm/nub-types && npm publish --access public)
-
-      - name: Create GitHub Release
+      - name: Create GitHub Release (with asset-upload retry)
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # Re-running this job overwrites the release + re-uploads assets.
           files: |
             release-archives/nub-darwin-arm64.tar.gz
             release-archives/nub-darwin-arm64.tar.gz.sha256
@@ -749,9 +844,74 @@ jobs:
             release-archives/nub-win32-arm64.zip
             release-archives/nub-win32-arm64.zip.sha256
 
+      - name: Verify all release assets present (re-upload missing, else FAIL)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The exhaustive list of 16 assets (8 platforms × {archive, .sha256}) that
+          # a complete release MUST carry. This is the load-bearing check that the
+          # v0.0.48 partial upload (9/16) would have FAILED instead of shipping. We
+          # list the release's current assets, re-upload any missing ones (with
+          # retries), then re-list and FAIL LOUD if a gap survives.
+          EXPECTED=(
+            nub-darwin-arm64.tar.gz nub-darwin-arm64.tar.gz.sha256
+            nub-darwin-x64.tar.gz nub-darwin-x64.tar.gz.sha256
+            nub-linux-x64.tar.gz nub-linux-x64.tar.gz.sha256
+            nub-linux-x64-musl.tar.gz nub-linux-x64-musl.tar.gz.sha256
+            nub-linux-arm64.tar.gz nub-linux-arm64.tar.gz.sha256
+            nub-linux-arm64-musl.tar.gz nub-linux-arm64-musl.tar.gz.sha256
+            nub-win32-x64.zip nub-win32-x64.zip.sha256
+            nub-win32-arm64.zip nub-win32-arm64.zip.sha256
+          )
+          TAG="$GITHUB_REF_NAME"
+
+          missing_assets() {
+            local present
+            present="$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+            local m=()
+            for a in "${EXPECTED[@]}"; do
+              if ! grep -qxF "$a" <<<"$present"; then m+=("$a"); fi
+            done
+            printf '%s\n' "${m[@]}"
+          }
+
+          # Up to 3 passes: each pass re-uploads (clobbering) whatever is still
+          # missing, then re-checks. A transient upload failure self-heals; a real
+          # gap (a never-built platform, a vanished archive) fails after the passes.
+          for pass in 1 2 3; do
+            mapfile -t MISSING < <(missing_assets)
+            # Drop a spurious empty element if everything is present.
+            [ "${#MISSING[@]}" -eq 1 ] && [ -z "${MISSING[0]}" ] && MISSING=()
+            if [ "${#MISSING[@]}" -eq 0 ]; then
+              echo "✓ all ${#EXPECTED[@]} release assets present on $TAG"
+              exit 0
+            fi
+            echo "--- pass $pass: ${#MISSING[@]} asset(s) missing: ${MISSING[*]} ---"
+            for a in "${MISSING[@]}"; do
+              f="release-archives/$a"
+              if [ ! -f "$f" ]; then
+                echo "::error::expected asset $a was never built (no $f) — cannot complete the release. Check the build matrix."
+                exit 1
+              fi
+              echo "re-uploading $a"
+              gh release upload "$TAG" "$f" --clobber || echo "  (upload of $a failed this pass; will retry)"
+            done
+            sleep 10
+          done
+
+          mapfile -t STILL < <(missing_assets)
+          [ "${#STILL[@]}" -eq 1 ] && [ -z "${STILL[0]}" ] && STILL=()
+          if [ "${#STILL[@]}" -ne 0 ]; then
+            echo "::error::release $TAG is STILL missing ${#STILL[@]} asset(s) after retries: ${STILL[*]} — failing the release loud (the v0.0.48 partial-upload failure mode)."
+            exit 1
+          fi
+          echo "✓ all ${#EXPECTED[@]} release assets present on $TAG"
+
   test-install:
     name: Test install (${{ matrix.os }})
-    needs: publish
+    needs: publish-npm
     strategy:
       fail-fast: false
       matrix:
@@ -804,7 +964,7 @@ jobs:
     # broken `-musl` platform-package selection / a glibc-only addon link in CI.
     # node:22-alpine also exercises a floor-ish Node on musl in one shot.
     name: Test install (linux-musl)
-    needs: publish
+    needs: publish-npm
     runs-on: ubuntu-latest
     container: node:22-alpine
     steps:
