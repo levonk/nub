@@ -323,11 +323,13 @@ fn run_add(typed: &str, args: &[String]) -> Result<i32> {
             &yarn_remedy("add", &verb.packages),
         ));
     }
-    finish(
+    let code = finish(
         session
             .runtime
             .block_on(aube::commands::add::run(verb, globals.effective_filter())),
-    )
+    )?;
+    stamp_if_truly_fresh(code, &session);
+    Ok(code)
 }
 
 fn run_remove(typed: &str, args: &[String]) -> Result<i32> {
@@ -366,10 +368,12 @@ fn run_update(typed: &str, args: &[String]) -> Result<i32> {
             &yarn_remedy("upgrade", &verb.packages),
         ));
     }
-    finish_code(session.runtime.block_on(aube::commands::update::run(
+    let code = finish_code(session.runtime.block_on(aube::commands::update::run(
         verb,
         globals.effective_filter(),
-    )))
+    )))?;
+    stamp_if_truly_fresh(code, &session);
+    Ok(code)
 }
 
 fn run_dedupe(typed: &str, args: &[String]) -> Result<i32> {
@@ -882,16 +886,15 @@ pub fn run_install(flags: InstallFlags) -> Result<i32> {
     // below — the explicit CLI flag always wins (it's OR'd in, never overridden).
     let config = super::install_config_signals(&session);
 
-    // FAIL LOUD when offline mode is active AND a yarn `yarn-offline-mirror` is
-    // configured: nub can't read a configured mirror directory, so in offline
-    // mode (where the mirror is the user's intended package source) silently
-    // hitting the public registry would diverge. The mirror is moot online, so
-    // gate on the effective offline state (yarn `enableNetwork: false`, or the
-    // `--offline` / `--prefer-offline` CLI flags).
-    if let Some(err) = offline_mirror_preflight(
-        &session,
-        flags.offline || flags.prefer_offline || config.offline,
-    ) {
+    // FAIL LOUD when STRICT offline mode is active AND a yarn `yarn-offline-mirror`
+    // is configured: nub can't read a configured mirror directory, so in strict
+    // offline mode (where the mirror is the user's intended package source)
+    // silently hitting the public registry would diverge. The mirror is moot
+    // online, so gate on the effective strict-offline state (yarn
+    // `enableNetwork: false` / Berry `--offline`, or the `--offline` CLI flag).
+    // `--prefer-offline` is deliberately EXCLUDED: it permits network fallback,
+    // so it is not strict offline and must not trip the mirror fatal.
+    if let Some(err) = offline_mirror_preflight(&session, flags.offline || config.offline) {
         return Err(err);
     }
 
@@ -980,10 +983,26 @@ pub fn run_install(flags: InstallFlags) -> Result<i32> {
     // stamp the manifest so the identity is durable and self-reinforcing.
     // Stamp ONLY on a clean success — a failed/partial install must not leave
     // an identity stamp behind.
+    stamp_if_truly_fresh(code, &session);
+    Ok(code)
+}
+
+/// Stamp nub identity iff the engine run succeeded (`code == 0`) AND the project
+/// was truly fresh (no lockfile / `packageManager` / `devEngines` / pnpm-named
+/// file anywhere in the walk). Shared by every project-creating verb — `install`,
+/// `add`, `update` — so a truly-fresh `add`/`update` claims identity the same way
+/// a fresh `install` does; without it an `add` would write `lock.yaml` (the
+/// embedder `defaultLockfileFormat=aube` default) yet leave the manifest
+/// unstamped, and a later `install` — now seeing a lockfile, so no longer
+/// truly-fresh — would never stamp either, leaving identity incoherent.
+/// Idempotent by construction: once a lockfile exists `truly_fresh` is false, so
+/// a second mutating verb on the now-stamped project is a no-op here.
+/// `nub ci` is intentionally NOT a caller: it hard-errors on a missing lockfile,
+/// so it can never reach a truly-fresh success.
+fn stamp_if_truly_fresh(code: i32, session: &EngineSession) {
     if code == 0 && session.truly_fresh {
         stamp_fresh_nub_identity();
     }
-    Ok(code)
 }
 
 /// Stamp nub identity into the root `package.json` after a successful

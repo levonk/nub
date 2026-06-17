@@ -294,3 +294,108 @@ fn install_refuses_to_mutate_a_drifted_yarn_lock() {
         "the gate must not leave an aube-lock.yaml behind"
     );
 }
+
+/// A truly-fresh `nub add` claims nub identity exactly like a fresh `install`:
+/// the add resolves + writes nub's neutral `lock.yaml` AND stamps the manifest
+/// (`packageManager: nub@<ver>` + `devEngines.packageManager.name = nub`). The
+/// stamp rides every project-creating verb, not just `install` — otherwise an
+/// `add` would write a lockfile yet leave identity unstamped, and the now-present
+/// lockfile would stop a later `install` from stamping too.
+#[test]
+#[ignore = "network: resolves + fetches is-positive@3.1.0 from the npm registry"]
+fn add_on_a_truly_fresh_project_claims_nub_identity() {
+    if !registry_reachable() {
+        eprintln!("skipping: registry.npmjs.org unreachable");
+        return;
+    }
+    let dir = pm_tmpdir("fresh-add");
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"fresh-add","version":"1.0.0"}"#,
+    )
+    .unwrap();
+
+    let (stdout, stderr, code) = run_install(&dir, &["add", "is-positive@3.1.0"]);
+    assert_eq!(code, 0, "stdout: {stdout}\nstderr: {stderr}");
+
+    assert!(
+        dir.join("lock.yaml").is_file(),
+        "a truly-fresh add writes nub's neutral lock.yaml: {stderr}"
+    );
+    assert!(
+        !dir.join("pnpm-lock.yaml").exists() && !dir.join("aube-lock.yaml").exists(),
+        "neither pnpm-lock.yaml nor aube-lock.yaml may appear on the truly-fresh path"
+    );
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("package.json")).unwrap()).unwrap();
+    assert_eq!(
+        manifest["packageManager"]
+            .as_str()
+            .map(|s| s.starts_with("nub@")),
+        Some(true),
+        "a truly-fresh add must stamp packageManager nub@<ver>: {manifest}"
+    );
+    assert_eq!(
+        manifest["devEngines"]["packageManager"]["name"].as_str(),
+        Some("nub"),
+        "a truly-fresh add must stamp devEngines.packageManager.name = nub: {manifest}"
+    );
+    assert_eq!(
+        manifest["dependencies"]["is-positive"].as_str(),
+        Some("3.1.0"),
+        "the added dep must land in dependencies: {manifest}"
+    );
+}
+
+/// The yarn `yarn-offline-mirror` fail-loud gate fires only for STRICT offline.
+/// `--offline` (yarn `enableNetwork:false` / Berry `--offline`) aborts upfront —
+/// nub can't read a configured mirror directory, so silently hitting the registry
+/// would diverge. `--prefer-offline` PERMITS network fallback, so it is not strict
+/// offline and must pass the mirror preflight (it then hits the ordinary yarn
+/// write-gate, never the mirror fatal). No network: both paths fail before any
+/// fetch, so this test needs no registry.
+#[test]
+fn prefer_offline_does_not_trip_the_yarn_offline_mirror_fatal() {
+    let dir = pm_tmpdir("mirror");
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"mirror","version":"1.0.0","dependencies":{"is-positive":"3.1.0"}}"#,
+    )
+    .unwrap();
+    // A yarn project (yarn.lock present) with a classic-yarnrc offline mirror.
+    std::fs::write(
+        dir.join("yarn.lock"),
+        "# yarn lockfile v1\n\n\nis-positive@3.1.0:\n  version \"3.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join(".yarnrc"),
+        "yarn-offline-mirror \"./npm-packages-offline-cache\"\n",
+    )
+    .unwrap();
+
+    const MIRROR_FATAL: &str = "yarn-offline-mirror";
+
+    // Strict --offline → the mirror fatal fires.
+    let (_, stderr_strict, code_strict) = run_install(&dir, &["install", "--offline"]);
+    assert_ne!(
+        code_strict, 0,
+        "strict --offline + a configured mirror must abort: {stderr_strict}"
+    );
+    assert!(
+        stderr_strict.contains(MIRROR_FATAL),
+        "strict --offline must surface the offline-mirror fatal: {stderr_strict}"
+    );
+
+    // --prefer-offline → past the mirror preflight (it permits network fallback).
+    // It then hits the ordinary yarn write-gate, NOT the mirror fatal.
+    let (_, stderr_prefer, code_prefer) = run_install(&dir, &["install", "--prefer-offline"]);
+    assert!(
+        !stderr_prefer.contains(MIRROR_FATAL),
+        "--prefer-offline must NOT trip the offline-mirror fatal: {stderr_prefer}"
+    );
+    // Whatever it does next, it didn't abort over the mirror — code is governed
+    // by the yarn gate / install path, never the mirror preflight.
+    let _ = code_prefer;
+}
