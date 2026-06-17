@@ -23,6 +23,8 @@ This file is the entry point for AI coding agents working in this repository. It
 - **Candid hedges that read as gaming** — "load-bearing for honesty," "this is the headline," framing a default (e.g. GVS auto-disable for next/nuxt/parcel) as something to be sheepish about, or any sentence a competitor/skeptic could screenshot as "they juice their benchmarks."
 - **Private attributions / quotes / first-person strategy** — by-name attributions, internal quotes, "our number," "don't publish X," "reads as cherry-picking." Public copy states what the code DOES, factually and neutrally — never *why a number was framed a certain way*.
 
+**Commit messages are professional, factual, and neutral — NEVER braggy, competitive, or editorializing.** A commit message states WHAT CHANGED, not how great it is or how it stacks up against a competitor. Banned: competitive bragging ("nub clearly beats bun", "crushes pnpm", "fastest"), superlatives/hype, and any framing a skeptic could screenshot. Write `site: update warm-install bench to 36-run numbers`, NOT `site: … (nub clearly beats bun)`. Benchmark commits name the change (new run, new sample size, updated bars) — never the verdict. This applies to every commit subject + body; the rule is the same as for any tracked file (above), and commit messages are world-readable forever and cannot be cleanly scrubbed once pushed.
+
 All internal deliberation lives in the **LOCAL-ONLY, gitignored** surfaces — `.fray/`, `epics/`, `wiki/` (none are published). Keep strategy, competitive analysis, and decision rationale there, never in a tracked source/doc/test file. When in doubt, leave it out of the commit.
 
 ## Model tiering for sub-agents (HIGH PRIORITY — apply to EVERY dispatch)
