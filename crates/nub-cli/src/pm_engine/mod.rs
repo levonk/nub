@@ -2005,6 +2005,54 @@ mod tests {
     }
 
     #[test]
+    fn setting_defaults_never_inherit_incumbent_allow_all_build_policy() {
+        // Security invariant: nub must NEVER inherit an allow-all build-script
+        // default from any incumbent.  Every incumbent — npm, pnpm, yarn,
+        // yarn-berry, bun, aube, npm-shrinkwrap, and fresh/no-lockfile — must
+        // produce `defaultTrust = "true"` (the safe explicit allowlist posture)
+        // and must NOT carry `dangerouslyAllowAllBuilds` in the defaults map.
+        // This test guards against a future incumbent-specialisation refactor
+        // silently leaking an unsafe default.
+        let dir = tempfile::tempdir().unwrap();
+        let detected = |kind| DetectedLockfile {
+            kind,
+            dir: dir.path().to_path_buf(),
+            fresh: false,
+        };
+
+        let all_kinds = [
+            Some(LockfileKind::Npm),
+            Some(LockfileKind::NpmShrinkwrap),
+            Some(LockfileKind::Pnpm),
+            Some(LockfileKind::Yarn),
+            Some(LockfileKind::YarnBerry),
+            Some(LockfileKind::Bun),
+            Some(LockfileKind::Aube),
+            None, // fresh / nub-identity project
+        ];
+
+        for kind in all_kinds {
+            let d = kind.map(detected);
+            let defaults = nub_setting_defaults(d.as_ref());
+            let label = format!("{kind:?}");
+
+            // Must always carry the safe explicit-allowlist posture.
+            assert_eq!(
+                get(&defaults, "defaultTrust"),
+                Some("true"),
+                "{label}: defaultTrust must be \"true\""
+            );
+
+            // Must never inject an allow-all build-script key.
+            assert_eq!(
+                get(&defaults, "dangerouslyAllowAllBuilds"),
+                None,
+                "{label}: dangerouslyAllowAllBuilds must not appear in defaults"
+            );
+        }
+    }
+
+    #[test]
     fn yarnrc_node_linker_reads_unquoted_and_quoted_and_ignores_others() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".yarnrc.yml");
