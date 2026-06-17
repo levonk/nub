@@ -419,7 +419,7 @@ Passing `--node-linker hoisted` produces a flat, npm-style layout instead. The n
 
 ### Offline installs
 
-When the global store already holds every package, a warm install relinks files from that store into `node_modules` via reflink (APFS/btrfs) or hardlink (ext4) — no re-download, no byte-for-byte copy. The pnpm installer uses the same broad store-and-link idea; Nub's warm path is faster in this benchmark because it does less work while rebuilding the project layout.
+Like pnpm, Nub relinks files from the global store into `node_modules` via reflink (APFS/btrfs) or hardlink (ext4) when the store already holds every package — no re-download, no byte-for-byte copy. The benchmark below measures the warm reinstall case: `node_modules` is removed, packages are already on disk, and the installer rebuilds the project layout.
 
 <Bench
   label="warm reinstall · create-t3-app · macOS"

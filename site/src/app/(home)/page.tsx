@@ -1154,14 +1154,13 @@ function HypermanagerBand() {
           <Feature
             accent="pink"
             eyebrow="Install speed"
-            title="The fastest warm installs"
+            title="Warm installs"
             body={
               <>
-                The pnpm installer already links packages from a content-addressed store instead of
-                duplicating bytes. Nub uses the same broad model, then optimizes the warm path: when the store
-                is populated, a reinstall is mostly relinking into <Mono>node_modules</Mono> — about
-                2.5× faster than pnpm on a create-t3-app project, faster than bun, and well ahead
-                of npm.
+                Like pnpm, Nub keeps package files in a global content-addressed store and links
+                them into{' '}<Mono>node_modules</Mono>. Nub embeds{' '}
+                <DocLink href="https://github.com/jdx/aube">aube</DocLink>, a highly optimized
+                Rust-based resolver and linker.
               </>
             }
             visual={
