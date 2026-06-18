@@ -146,8 +146,10 @@ fn user_async_loader_preserves_native_cjs_handoff() {
         eprintln!("skipping user-async-loader counter-test: needs node major >= 26 (got {major})");
         return;
     }
-    let (stdout, stderr, code) =
-        run_nub("counter-entry.mjs", &[("NODE_OPTIONS", "--import ./user-loader.mjs")]);
+    let (stdout, stderr, code) = run_nub(
+        "counter-entry.mjs",
+        &[("NODE_OPTIONS", "--import ./user-loader.mjs")],
+    );
     assert_eq!(
         code, 0,
         "with a user async loader active, import()-of-CJS must still run (node major {major}); stderr={stderr}"
