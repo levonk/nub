@@ -109,15 +109,18 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#100f0d',
-  colorScheme: 'dark',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#faf7f0' },
+    { media: '(prefers-color-scheme: dark)', color: '#100f0d' },
+  ],
+  colorScheme: 'dark light',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`dark ${fraunces.variable} ${newsreader.variable} ${plexMono.variable}`}
+      className={`${fraunces.variable} ${newsreader.variable} ${plexMono.variable}`}
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col antialiased">
@@ -126,9 +129,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           // Static, build-time JSON from a trusted local constant — safe to inline.
           dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
         />
-        <RootProvider
-          theme={{ defaultTheme: 'dark', enableSystem: false, forcedTheme: 'dark' }}
-        >
+        <RootProvider theme={{ defaultTheme: 'system', enableSystem: true }}>
           {children}
         </RootProvider>
       </body>

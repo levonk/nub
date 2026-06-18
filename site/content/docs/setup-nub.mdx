@@ -9,7 +9,7 @@ Swap `actions/setup-node` for `nubjs/setup-nub` and the rest of your workflow ke
 steps:
   - uses: actions/checkout@v4
 -   - uses: actions/setup-node@v4
-+   - uses: nubjs/setup-nub@v1
++   - uses: nubjs/setup-nub@v0
   - run: nub install
   - run: nub run test
 ```
@@ -26,7 +26,7 @@ That makes the inputs you'd reach for different:
 - - uses: actions/setup-node@v4
 -   with:
 -     node-version: 22
-+ - uses: nubjs/setup-nub@v1
++ - uses: nubjs/setup-nub@v0
 ```
 
 Nub reads `.node-version`, `.nvmrc`, or `engines.node` on first run.
@@ -38,7 +38,7 @@ The setup-node inputs (`node-version`, `cache`, `registry-url`, …) are all acc
 Pass a version to pre-provision it into Nub's cache during setup, so the first run is warm. This is a warm-up hint, not a pin — if it differs from the project's declared pin, the action emits a warning and Nub runs the project pin.
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     node-version: 22.15.0
 ```
@@ -46,7 +46,7 @@ Pass a version to pre-provision it into Nub's cache during setup, so the first r
 Read the version from a file instead with `node-version-file`:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     node-version-file: .node-version
 ```
@@ -58,7 +58,7 @@ Both are redundant with Nub's own resolution — Nub provisions the pin lazily o
 Cache Nub's global store and provisioned Node toolchains across runs. Off by default; turn it on with a boolean:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     cache: true
 ```
@@ -76,7 +76,7 @@ yarn.lock
 Override the auto-detection with `cache-dependency-path` — a lockfile path, glob, or newline-delimited list:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     cache: true
     cache-dependency-path: |
@@ -91,7 +91,7 @@ A `cache-hit` output reports whether the store was restored. A `restore-keys` la
 Set up authenticated registry access. The action writes a temporary `.npmrc` — the neutral file Nub's package manager reads — and binds the auth token to the `NODE_AUTH_TOKEN` environment variable:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     registry-url: https://registry.npmjs.org
 - run: nub install
@@ -102,7 +102,7 @@ Set up authenticated registry access. The action writes a temporary `.npmrc` —
 For GitHub Packages, point at the registry and the scope defaults to the repository owner:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     registry-url: https://npm.pkg.github.com
 - run: nub install
@@ -117,7 +117,7 @@ Set `scope` explicitly for a scoped registry, and `always-auth: true` to authent
 Pin the CLI version to install — any semver range npm understands. Defaults to the latest release:
 
 ```yaml
-- uses: nubjs/setup-nub@v1
+- uses: nubjs/setup-nub@v0
   with:
     nub-version: ^0.0
 ```
@@ -135,7 +135,7 @@ Pin the CLI version to install — any semver range npm understands. Defaults to
 | `scope` | | Scope for a scoped registry; falls back to the repository owner for GitHub Packages. |
 | `always-auth` | `false` | Authenticate on every registry request. |
 
-The setup-node inputs `token`, `check-latest`, `architecture`, `mirror`, and `mirror-token` are accepted and ignored — present so a swap never errors, with no effect in v1. A `version` input survives as a deprecated alias for `nub-version` and emits a warning.
+The setup-node inputs `token`, `check-latest`, `architecture`, `mirror`, and `mirror-token` are accepted and ignored — present so a swap never errors, with no effect. A `version` input survives as a deprecated alias for `nub-version` and emits a warning.
 
 ## Outputs
 

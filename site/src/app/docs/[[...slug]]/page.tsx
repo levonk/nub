@@ -23,7 +23,11 @@ export default async function Page(props: {
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
-      <AIActions markdownUrl={`/llms${page.url}.mdx`} pageUrl={page.url} />
+      <AIActions
+        markdownUrl={`/llms${page.url}.mdx`}
+        pageUrl={page.url}
+        githubUrl="https://github.com/nubjs/nub"
+      />
       {/* fumadocs' DocsPage emits no <main>/landmark; mark the prose body as the
           page's main landmark so the doc has exactly one (WCAG / Lighthouse). */}
       <DocsBody role="main">

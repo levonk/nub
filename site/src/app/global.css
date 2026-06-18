@@ -64,6 +64,79 @@
   --color-fd-ring: #ff5d3b;
 }
 
+:root {
+  --nub-code-background: #0b0a08;
+  --nub-code-foreground: #ece6d8;
+  --nub-code-muted: #9f988c;
+  --nub-code-border: #2a2620;
+  --nub-code-hairline: color-mix(in srgb, var(--nub-code-foreground) 16%, transparent);
+  --nub-code-track: color-mix(in srgb, var(--nub-code-foreground) 62%, transparent);
+  --nub-code-bar-muted: color-mix(in srgb, var(--nub-code-foreground) 30%, transparent);
+}
+
+.nub-code-panel {
+  background: var(--nub-code-background);
+  border-color: var(--nub-code-border);
+  color: var(--nub-code-foreground);
+  box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.9);
+}
+
+.nub-code-separator,
+.nub-code-row-border {
+  border-color: var(--nub-code-hairline);
+}
+
+.nub-code-fg {
+  color: var(--nub-code-foreground);
+}
+
+.nub-code-muted {
+  color: var(--nub-code-muted);
+}
+
+.nub-code-track {
+  background: var(--nub-code-track);
+}
+
+.nub-code-bar-muted {
+  background: var(--nub-code-bar-muted);
+}
+
+.nub-code-link:hover {
+  color: var(--nub-code-foreground);
+}
+
+.nub-code-panel .text-fd-foreground {
+  color: var(--nub-code-foreground);
+}
+
+.nub-code-panel .text-fd-muted-foreground {
+  color: var(--nub-code-muted);
+}
+
+.prose figure.shiki,
+.blog-prose figure.shiki {
+  background: var(--nub-code-background);
+  border-color: var(--nub-code-border);
+  color: var(--nub-code-foreground);
+  box-shadow: 0 18px 45px -34px rgb(0 0 0 / 0.85), 0 1px 2px rgb(0 0 0 / 0.24);
+}
+
+.prose figure.shiki :is(pre, code, .line),
+.blog-prose figure.shiki :is(pre, code, .line) {
+  color: var(--nub-code-foreground);
+}
+
+.prose figure.shiki button,
+.blog-prose figure.shiki button {
+  color: var(--nub-code-muted);
+}
+
+.prose figure.shiki button:hover,
+.blog-prose figure.shiki button:hover {
+  color: var(--nub-code-foreground);
+}
+
 html {
   font-feature-settings: 'kern', 'liga', 'calt';
   -webkit-font-smoothing: antialiased;
@@ -177,7 +250,7 @@ h1, h2, h3, h4, .font-display {
 pre span[style*='#8B8B8B94'],
 pre span[style*='#6A737D'],
 pre span[style*='#6a737d'] {
-  color: #8f8a80 !important;
+  color: var(--nub-code-muted) !important;
 }
 
 /* ```console fences get a terminal look via the `nub:console` shiki transformer
@@ -199,12 +272,12 @@ pre .line .console-prompt {
 
 /* Command text reads bright (full foreground). */
 pre .line[data-cmd] span:not(.console-prompt) {
-  color: var(--color-fd-foreground) !important;
+  color: var(--nub-code-foreground) !important;
 }
 
 /* Output lines are dimmed — the command/output differentiation. */
 pre .line[data-output] span {
-  color: var(--color-fd-muted-foreground) !important;
+  color: var(--nub-code-muted) !important;
 }
 
 /* IBM Plex Mono against the Newsreader serif body. Prose is dominated by

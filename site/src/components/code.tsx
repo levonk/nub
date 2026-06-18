@@ -9,9 +9,9 @@ function Window({ children, className = '', size = 'sm' }: { children: ReactNode
   const head = size === 'lg' ? 'gap-2.5 px-5 py-3.5' : 'gap-2 px-4 py-2.5';
   return (
     <div
-      className={`overflow-hidden rounded-xl border border-fd-border bg-[#0b0a08] shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)] ${className}`}
+      className={`nub-code-panel overflow-hidden rounded-xl border ${className}`}
     >
-      <div className={`flex items-center border-b border-fd-border/70 ${head}`}>
+      <div className={`nub-code-separator flex items-center border-b ${head}`}>
         <span className={`${dot} rounded-full bg-ember/80`} />
         <span className={`${dot} rounded-full bg-acid/70`} />
         <span className={`${dot} rounded-full bg-sky/70`} />
@@ -43,17 +43,17 @@ export function Terminal({
         {lines.map((line, i) => (
           <div key={i} className="whitespace-pre">
             {line.out !== undefined ? (
-              <span className={line.bright ? 'text-fd-foreground' : 'text-fd-muted-foreground'}>
+              <span className={line.bright ? 'nub-code-fg' : 'nub-code-muted'}>
                 {line.out}
               </span>
             ) : (
               <>
                 <span className="select-none text-ember">$ </span>
-                <span className="text-fd-foreground">
+                <span className="nub-code-fg">
                   {line.comment && hasComments ? line.cmd!.padEnd(width) : line.cmd}
                 </span>
                 {line.comment ? (
-                  <span className="text-fd-muted-foreground">{`   # ${line.comment}`}</span>
+                  <span className="nub-code-muted">{`   # ${line.comment}`}</span>
                 ) : null}
               </>
             )}
@@ -83,7 +83,7 @@ export async function Source({
       pre: ({ style: _style, ...props }) => (
         <pre
           {...props}
-          className="overflow-x-auto bg-transparent px-5 py-4 font-mono text-[0.8rem] leading-7"
+          className="nub-code-fg overflow-x-auto bg-transparent px-5 py-4 font-mono text-[0.8rem] leading-7"
         />
       ),
     },
@@ -115,8 +115,8 @@ export function Bench({
 }) {
   return (
     <div className="not-prose my-6">
-      <div className="rounded-xl border border-fd-border bg-[#0b0a08] p-6">
-        <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
+      <div className="nub-code-panel rounded-xl border p-6">
+        <p className="nub-code-muted mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em]">
           {label}
         </p>
         <BenchBars accent={accent} max={max} rows={rows} />
@@ -129,7 +129,7 @@ export function Bench({
               href={source}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
+              className="nub-code-link nub-code-muted underline decoration-dotted underline-offset-4"
             >
               View benchmark →
             </a>
@@ -163,18 +163,18 @@ export function BenchBars({
         <div key={r.cmd}>
           <div className="mb-1.5 flex items-baseline justify-between gap-4">
             <span
-              className={`font-mono text-sm ${r.us ? `font-semibold ${textAccent}` : 'text-fd-foreground'}`}
+              className={`font-mono text-sm ${r.us ? `font-semibold ${textAccent}` : 'nub-code-fg'}`}
             >
               {r.cmd}
             </span>
-            <span className="shrink-0 font-mono text-xs tabular-nums text-fd-muted-foreground">
+            <span className="nub-code-muted shrink-0 font-mono text-xs tabular-nums">
               {r.ms} {unit}
               {r.label ? `  ·  ${r.label}` : r.ratio ? `  ·  ${r.ratio}× slower` : ''}
             </span>
           </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-fd-card/60">
+          <div className="nub-code-track h-2.5 overflow-hidden rounded-full">
             <div
-              className={`h-full rounded-full ${r.us ? barAccent : 'bg-fd-foreground/25'}`}
+              className={`h-full rounded-full ${r.us ? barAccent : 'nub-code-bar-muted'}`}
               style={{ width: `${Math.max((r.ms / max) * 100, 3)}%` }}
             />
           </div>

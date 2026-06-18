@@ -31,8 +31,8 @@ const lines: Line[] = [
 
 export function ShimDemo() {
   return (
-    <figure className="not-prose my-4 overflow-hidden rounded-xl border border-fd-border bg-fd-card shadow-sm">
-      <pre className="overflow-x-auto px-5 py-4 font-mono text-[0.8rem] leading-[1.43] text-fd-foreground">
+    <figure className="nub-code-panel not-prose my-4 overflow-hidden rounded-xl border">
+      <pre className="nub-code-fg overflow-x-auto px-5 py-4 font-mono text-[0.8rem] leading-[1.43]">
         {lines.map((line, i) => (
           <div key={i} className="whitespace-pre">
             {line.prompt ? (
@@ -40,10 +40,10 @@ export function ShimDemo() {
                 {/* `$ ` glyph in the ember accent, select-none so copy skips it
                     — the same prompt treatment as the site's Terminal card. */}
                 <span className="select-none text-ember">$ </span>
-                <span className="text-fd-foreground">{line.text}</span>
+                <span className="nub-code-fg">{line.text}</span>
               </>
             ) : (
-              <span className={line.dim ? 'text-fd-muted-foreground' : 'text-fd-foreground'}>
+              <span className={line.dim ? 'nub-code-muted' : 'nub-code-fg'}>
                 {/* Zero-width space keeps blank lines from collapsing. */}
                 {line.text || '​'}
               </span>

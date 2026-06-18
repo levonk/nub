@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { InstallTabs } from '@/components/install-tabs';
-import { MigrationPrompt } from '@/components/migration-prompt';
+import { MigrationPrompt, ViewRepoLink } from '@/components/migration-prompt';
 import { Terminal, Source, BenchBars } from '@/components/code';
 import { ToolkitTabs } from '@/components/toolkit-tabs';
 import { getLatestNode } from '@/lib/node-version';
@@ -213,8 +213,9 @@ async function Hero() {
             <div className="mt-9">
               <InstallTabs />
             </div>
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
               <MigrationPrompt />
+              <ViewRepoLink />
             </div>
           </div>
           <Terminal size="lg" className="w-full min-w-0 max-w-2xl xl:max-w-none" lines={heroLines(node.major)} />
@@ -514,9 +515,9 @@ const { host, port } = config        // destructure fields`}
               </>
             }
             visual={
-              <div className="rounded-xl border border-fd-border bg-[#0b0a08] p-6">
+              <div className="nub-code-panel rounded-xl border p-6">
                 {/* Source: benchmarks/results.md "Direct TS execution". */}
-                <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
+                <p className="nub-code-muted mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em]">
                   run a TypeScript file · macOS
                 </p>
                 <BenchBars
@@ -532,7 +533,7 @@ const { host, port } = config        // destructure fields`}
                   href="https://github.com/nubjs/nub/blob/main/benchmarks/results.md#direct-ts-execution-nub-hellots-vs-node-vs-tsx-vs-bun"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
+                  className="nub-code-link nub-code-muted mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] underline decoration-dotted underline-offset-4"
                 >
                   View bench →
                 </a>
@@ -687,9 +688,9 @@ function RunScriptBand() {
               </>
             }
             visual={
-              <div className="rounded-xl border border-fd-border bg-[#0b0a08] p-6">
+              <div className="nub-code-panel rounded-xl border p-6">
                 {/* Source: tests/bench/script-runner, warm script-dispatch bench, M1 Max, Node v26.2.0, hyperfine 50 runs. */}
-                <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
+                <p className="nub-code-muted mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em]">
                   script dispatch · warm · 50 runs · macOS
                 </p>
                 <BenchBars
@@ -706,7 +707,7 @@ function RunScriptBand() {
                   href="https://github.com/nubjs/nub/tree/main/tests/bench/script-runner"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
+                  className="nub-code-link nub-code-muted mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] underline decoration-dotted underline-offset-4"
                 >
                   View bench →
                 </a>
@@ -801,9 +802,9 @@ function NubxBand() {
               </>
             }
             visual={
-              <div className="rounded-xl border border-fd-border bg-[#0b0a08] p-6">
+              <div className="nub-code-panel rounded-xl border p-6">
                 {/* Source: benchmarks/results.md "Bin runner". */}
-                <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
+                <p className="nub-code-muted mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em]">
                   esbuild --version · macOS
                 </p>
                 <BenchBars
@@ -819,7 +820,7 @@ function NubxBand() {
                   href="https://github.com/nubjs/nub/blob/main/benchmarks/results.md#bin-runner-nubx--nub-exec-vs-pnpm-exec-vs-npx"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
+                  className="nub-code-link nub-code-muted mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] underline decoration-dotted underline-offset-4"
                 >
                   View bench →
                 </a>
@@ -1020,20 +1021,20 @@ function PMMatrix() {
     c === 'yes' ? (
       <span className="text-pink">●</span>
     ) : c === 'no' ? (
-      <span className="text-fd-muted-foreground/40">○</span>
+      <span className="nub-code-muted opacity-45">○</span>
     ) : (
-      <span className="text-fd-muted-foreground/30">—</span>
+      <span className="nub-code-muted opacity-35">—</span>
     );
   return (
-    <div className="overflow-x-auto rounded-xl border border-fd-border bg-[#0b0a08]">
+    <div className="nub-code-panel overflow-x-auto rounded-xl border">
       <table className="w-full border-collapse text-left font-mono text-sm">
         <thead>
-          <tr className="border-b border-fd-border/70">
-            <th className="px-4 py-3 font-normal text-fd-muted-foreground">config field</th>
+          <tr className="nub-code-separator border-b">
+            <th className="nub-code-muted px-4 py-3 font-normal">config field</th>
             {PM_COLUMNS.map((pm) => (
               <th
                 key={pm}
-                className={`px-4 py-3 text-center font-normal ${pm === 'nub' ? 'text-pink' : 'text-fd-muted-foreground'}`}
+                className={`px-4 py-3 text-center font-normal ${pm === 'nub' ? 'text-pink' : 'nub-code-muted'}`}
               >
                 {pm}
               </th>
@@ -1042,8 +1043,8 @@ function PMMatrix() {
         </thead>
         <tbody>
           {PM_MATRIX.map((row, i) => (
-            <tr key={i} className="border-b border-fd-border/40 last:border-0">
-              <td className="px-4 py-3 text-fd-foreground">{row.field}</td>
+            <tr key={i} className="nub-code-row-border border-b last:border-0">
+              <td className="nub-code-fg px-4 py-3">{row.field}</td>
               {PM_COLUMNS.map((pm) => (
                 <td key={pm} className="px-4 py-3 text-center">
                   {glyph(row.cells[pm])}
@@ -1148,9 +1149,9 @@ function HypermanagerBand() {
               </>
             }
             visual={
-              <div className="rounded-xl border border-fd-border bg-[#0b0a08] p-6">
+              <div className="nub-code-panel rounded-xl border p-6">
                 {/* Source: tests/bench/install/results/warm-t3-20260617-{100017,100453,100743}.json (create-t3-app, Next 16), warm + frozen + offline, node_modules wiped between runs. Bars are arithmetic means across 36 timed runs. */}
-                <p className="mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground">
+                <p className="nub-code-muted mb-5 font-mono text-[0.7rem] uppercase tracking-[0.14em]">
                   warm frozen install · create-t3-app · 222 deps · macOS
                 </p>
                 <BenchBars
@@ -1168,7 +1169,7 @@ function HypermanagerBand() {
                   href="https://github.com/nubjs/nub/blob/main/tests/bench/install/README.md"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] text-fd-muted-foreground underline decoration-dotted decoration-fd-muted-foreground/60 underline-offset-4 hover:text-fd-foreground"
+                  className="nub-code-link nub-code-muted mt-3 inline-block py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.14em] underline decoration-dotted underline-offset-4"
                 >
                   View methodology →
                 </a>
@@ -1220,7 +1221,10 @@ function FinalCta() {
         </h2>
         <div className="mt-10 flex flex-col items-center gap-4">
           <InstallTabs className="mx-auto" />
-          <MigrationPrompt />
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            <MigrationPrompt />
+            <ViewRepoLink />
+          </div>
         </div>
       </Container>
     </section>

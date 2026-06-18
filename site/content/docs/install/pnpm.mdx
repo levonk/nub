@@ -1,6 +1,6 @@
 ---
 title: pnpm
-description: Nub mirrors pnpm most closely — native version-9 lockfile read and write, an isolated dependency tree, and pnpm-owned config, all gated on pnpm being the incumbent.
+description: Nub mirrors pnpm most closely — native version-9 lockfile read and write, the full dependency-verb surface, workspace selectors, an isolated dependency tree, and pnpm-owned config, all gated on pnpm being the incumbent.
 ---
 
 Nub mirrors pnpm most closely: the CLI surface, the isolated `node_modules` layout, and the lockfile. When pnpm is the incumbent — a `packageManager: "pnpm@…"` field or an existing `pnpm-lock.yaml` — Nub reads and writes pnpm's own `pnpm-lock.yaml` in its native format, and honors pnpm's config. Everything below is gated on that.
@@ -8,26 +8,52 @@ Nub mirrors pnpm most closely: the CLI surface, the isolated `node_modules` layo
 <CompatTable
   incumbent="pnpm"
   rows={[
-    { feature: <><code>pnpm-lock.yaml</code> v9</>, status: 'yes', note: 'Read + write; accepted by pnpm 9+.' },
-    { feature: <>older lockfile versions</>, status: 'no', note: 'v6 and v5.4 are refused; re-lock with pnpm 9+ first.' },
-    { feature: <code>packageManager</code>, status: 'yes', note: 'A pnpm declaration selects the pnpm incumbent before lockfile fallback.' },
-    { feature: <code>pnpm-workspace.yaml</code>, status: 'yes', note: 'Workspace package globs and workspace-level install settings.' },
-    { feature: <><code>catalog</code> / <code>catalogs</code></>, status: 'yes', note: 'Workspace catalog maps resolve catalog: dependency ranges.' },
-    { feature: <><code>.pnpmfile.cjs</code> / <code>.pnpmfile.mjs</code></>, status: 'partial', note: 'readPackage, preResolution, and afterAllResolved run. Dependency-map and package-map edits apply; new importers/packages, identity rewrites, updateConfig hooks, and config-dependency pnpmfiles do not.' },
-    { feature: <code>pnpm.overrides</code>, status: 'yes' },
-    { feature: <code>resolutions</code>, status: 'yes', note: 'Honored for pnpm compatibility.' },
-    { feature: <code>overrides</code>, incumbentStatus: 'n/a', status: 'n/a', note: 'The pnpm resolver ignores this npm/Bun field; Nub drops it under a pnpm incumbent.' },
-    { feature: <><code>allowBuilds</code> / <code>onlyBuiltDependencies</code></>, status: 'yes', note: 'Dependency build allowlists. neverBuiltDependencies is a denylist and wins.' },
-    { feature: <code>.npmrc</code>, status: 'yes', note: 'Registry, auth, TLS, proxy, and install settings Nub implements.' },
-    { feature: <><code>pnpm_config_*</code> / <code>PNPM_CONFIG_*</code></>, status: 'yes', note: 'Read only while pnpm is the incumbent.' },
-    { feature: <code>nodeLinker: isolated</code>, status: 'partial', note: 'Same symlink shape; the virtual store is node_modules/.nub, not node_modules/.pnpm.' },
-    { feature: <code>nodeLinker: hoisted</code>, status: 'yes' },
-    { feature: <code>nodeLinker: pnp</code>, status: 'no', note: 'Rejected; PnP install generation is out of scope.' },
-    { feature: <>dependency verbs</>, status: 'partial', note: 'Core verbs are wired: install, ci, add, remove, update, import, dedupe, prune, rebuild, fetch, link, unlink, patch, patch-commit, patch-remove, approve-builds, ignored-builds, dlx, and create. deploy, clean, purge, and the recursive meta-verb are not.' },
-    { feature: <>workspace selectors</>, status: 'partial', note: 'Workspace-aware dependency verbs accept -r, --filter, --filter-prod, --fail-if-no-match, and --include-workspace-root. Use those instead of the recursive meta-verb.' },
-    { feature: <code>audit</code>, status: 'yes' },
-    { feature: <code>sbom</code>, status: 'no', note: 'Not wired yet.' },
-    { feature: <>store / cache</>, status: 'partial', note: 'Store commands use Nub’s store; cache commands still operate on the embedded engine cache.' },
+    // ── Commands ──────────────────────────────────────────────────────
+    { feature: <><code>install</code> / <code>i</code> / <code>ci</code></>, status: 'yes', note: 'Resolves, links, and writes the lockfile on the real engine. ci installs strictly from the lockfile.' },
+    { feature: <><code>add</code> / <code>remove</code> / <code>update</code></>, status: 'yes', note: 'Mutate the dependency graph, rewrite package.json, and update the lockfile. Aliases a, rm/uninstall, up all resolve.' },
+    { feature: <><code>import</code></>, status: 'yes', note: 'Converts an existing npm, Yarn, or Bun lockfile into a pnpm-lock.yaml.' },
+    { feature: <><code>dedupe</code> / <code>prune</code></>, status: 'yes', note: 'dedupe collapses duplicate ranges; prune removes extraneous packages. dedupe --check reports without writing.' },
+    { feature: <><code>rebuild</code> / <code>fetch</code></>, status: 'yes', note: 'rebuild reruns build scripts for installed packages; fetch populates the store from the lockfile without linking.' },
+    { feature: <><code>link</code> / <code>unlink</code></>, status: 'yes', note: 'Symlink a local package into a project and remove it again.' },
+    { feature: <><code>patch</code> / <code>patch-commit</code> / <code>patch-remove</code></>, status: 'yes', note: 'The full patch-dependency workflow: edit in a temp dir, commit a .patch, and remove it.' },
+    { feature: <><code>approve-builds</code> / <code>ignored-builds</code></>, status: 'yes', note: 'Manage the lifecycle-script allowlist interactively and list packages whose build scripts were skipped.' },
+    { feature: <><code>dlx</code> / <code>create</code></>, status: 'yes', note: 'Fetch-and-run a package in a temp environment; scaffold from a create-* starter.' },
+    { feature: <><code>list</code> / <code>why</code> / <code>outdated</code></>, status: 'yes', note: 'Read-only queries over the installed tree: list (ls/la/ll), dependency paths (why/w), and out-of-date packages.' },
+    { feature: <><code>audit</code> / <code>licenses</code> / <code>peers</code></>, status: 'yes', note: 'Vulnerability audit, license report, and peer-dependency inspection.' },
+    { feature: <><code>publish</code> / <code>pack</code> / <code>version</code></>, status: 'yes', note: 'Registry publish, tarball packing, and version bumping run on the real engine.' },
+    { feature: <><code>store</code> / <code>config</code></>, status: 'yes', note: 'Content-addressed store forensics (store status/path/prune) and config get/set/list.' },
+    { feature: <><code>recursive</code> meta-verb</>, status: 'yes', note: 'Spelled as the -r / --filter flags on a verb (nub -r run build), not a recursive subcommand.' },
+    { feature: <><code>deploy</code></>, status: 'no', note: 'Not wired; pnpm deploy stays the path for now.' },
+    // ── Dependency fields ─────────────────────────────────────────────
+    { feature: <><code>dependencies</code> / <code>devDependencies</code></>, status: 'yes', note: 'Resolved and installed exactly as pnpm does, with dev/prod splits honored by --prod and --filter-prod.' },
+    { feature: <><code>optionalDependencies</code></>, status: 'yes', note: 'Installed when the platform matches; skipped silently otherwise, like pnpm.' },
+    { feature: <><code>peerDependencies</code> / <code>peerDependenciesMeta</code></>, status: 'yes', note: 'Peer ranges resolved per pnpm rules; peerDependenciesMeta.optional suppresses missing-peer warnings.' },
+    { feature: <><code>pnpm.overrides</code></>, status: 'yes', note: 'Version pins applied during resolution and written into the lockfile overrides block. The pnpm resolver prefers this over top-level fields.' },
+    { feature: <><code>resolutions</code></>, status: 'yes', note: 'The Yarn-style top-level field; pnpm honors it for compatibility and so does Nub.' },
+    { feature: <code>overrides</code>, status: 'yes', note: 'The pnpm resolver ignores this npm/Bun field; Nub mirrors that and ignores it under a pnpm incumbent. Use pnpm.overrides or resolutions.' },
+    { feature: <><code>onlyBuiltDependencies</code> / <code>neverBuiltDependencies</code></>, status: 'yes', note: 'The build allowlist and denylist feed the lifecycle-script policy; neverBuiltDependencies wins over any allow.' },
+    { feature: <><code>packageManager</code> / <code>engines</code></>, status: 'yes', note: 'A packageManager: pnpm@… declaration selects the pnpm incumbent; engines is respected.' },
+    { feature: <><code>scripts</code> + lifecycle</>, status: 'yes', note: 'package.json scripts run through nub run with pnpm-style pre/post lifecycle ordering.' },
+    // ── Workspaces ────────────────────────────────────────────────────
+    { feature: <><code>workspaces</code> / <code>pnpm-workspace.yaml</code></>, status: 'yes', note: 'Workspace membership from the workspaces field always; pnpm-workspace.yaml packages globs additionally while pnpm is the incumbent.' },
+    { feature: <><code>catalog:</code> / <code>catalogs:</code></>, status: 'yes', note: 'Catalog maps in pnpm-workspace.yaml resolve catalog: dependency ranges; round-trips through the lockfile.' },
+    { feature: <><code>workspace:</code> protocol</>, status: 'yes', note: 'workspace:* / workspace:^ ranges link local members and rewrite to concrete versions on publish.' },
+    { feature: <>workspace selectors</>, status: 'yes', note: 'Name, glob (*), directory ({packages/x}), exclusion (!pkg), and dependency traversal (...pkg / pkg...) all work, plus -r, --filter-prod, --fail-if-no-match, and --include-workspace-root. The git-since selector ([ref]) is plumbed but not yet wired.' },
+    // ── Config files ──────────────────────────────────────────────────
+    { feature: <code>.npmrc</code>, status: 'yes', note: 'Registry, auth tokens, TLS (cafile, strict-ssl), proxy, store-dir, and install settings are all read.' },
+    { feature: <><code>.pnpmfile.cjs</code> / <code>.pnpmfile.mjs</code></>, status: 'yes', note: 'readPackage fires and mutates resolution; afterAllResolved fires (narrow lockfile mutations apply; importer-graph mutations are ignored with a warning). Honored under a pnpm-incumbent or fresh project; ignored with a warning under an npm, Yarn, or Bun incumbent.' },
+    // ── Environment variables ─────────────────────────────────────────
+    { feature: <><code>npm_config_*</code></>, status: 'yes', note: 'The npm-config env surface (npm_config_registry, npm_config_store_dir, …) overrides the corresponding .npmrc key.' },
+    { feature: <><code>pnpm_config_*</code> / <code>PNPM_CONFIG_*</code></>, status: 'yes', note: 'Read while pnpm is the incumbent.' },
+    // ── Lockfiles ─────────────────────────────────────────────────────
+    { feature: <><code>pnpm-lock.yaml</code> v9</>, status: 'yes', note: 'Read and write in the native v9 format (lockfileVersion 9.0), accepted by pnpm 9+ with --frozen-lockfile.' },
+    { feature: <>older lockfile versions</>, status: 'yes', note: 'Nub targets v9; v6 (pnpm 8) and v5.4 (pnpm 7) are declined cleanly, leaving node_modules untouched. Re-lock under pnpm 9+ first.' },
+    { feature: <>npm / Bun lockfile round-trip</>, status: 'yes', note: 'package-lock.json v3 and bun.lock round-trip via import; yarn.lock is read-only (writes refused).' },
+    // ── Linking / hoisting ────────────────────────────────────────────
+    { feature: <code>nodeLinker: isolated</code>, status: 'yes', note: 'The default — pnpm symlink-into-a-virtual-store layout. The store is node_modules/.nub rather than node_modules/.pnpm; equivalent in shape, not byte-shared.' },
+    { feature: <code>nodeLinker: hoisted</code>, status: 'yes', note: 'The flat npm-style layout via --node-linker hoisted or node-linker=hoisted.' },
+    { feature: <code>nodeLinker: pnp</code>, status: 'no', note: 'Nub emits a hoisted or isolated node_modules; a node-linker=pnp request errors rather than downgrading silently.' },
+    { feature: <>content-addressed store</>, status: 'yes', note: 'A global content-addressed store with hardlink/clone linking into node_modules, like pnpm.' },
   ]}
 />
 
@@ -49,7 +75,7 @@ Lockfile is up to date, resolution step is skipped
 
 The round-trip holds both directions, for single packages and for workspaces with `catalog:` and `workspace:` entries (verified against pnpm 10.15.1).
 
-Older formats — v6 (pnpm 8) and v5.4 (pnpm 7) — keep root dependencies under a top-level `dependencies:` map instead of v9's `importers:`, which Nub's reader doesn't understand. Rather than misread one as an empty project and link nothing, Nub refuses up front and leaves your `node_modules` and lockfile untouched:
+Older formats — v6 (pnpm 8) and v5.4 (pnpm 7) — keep root dependencies under a top-level `dependencies:` map instead of v9's `importers:`. Nub declines them up front and leaves your `node_modules` and lockfile untouched:
 
 ```console
 # captured: nub 0.0.44 on a lockfileVersion: '6.0' lockfile
@@ -99,22 +125,25 @@ Under Nub identity, pnpm-named files are outside the supported config surface an
 
 ## Install behavior
 
-The default `node_modules` layout is **isolated** — pnpm's symlink-into-a-virtual-store scheme. Nub's store is `node_modules/.nub/` rather than `node_modules/.pnpm/`; the layouts are equivalent in shape but not byte-shared, so alternating tools relinks the tree. The `--node-linker hoisted` flag gives the flat npm-style layout.
+The default `node_modules` layout is **isolated** — pnpm's symlink-into-a-virtual-store scheme. The `--node-linker hoisted` flag gives the flat npm-style layout.
 
-There is no `pnp` linker. Nub rejects it rather than falling back silently:
+There is no `pnp` linker. A `node-linker=pnp` request — from `.npmrc` or the `--node-linker pnp` flag — is refused rather than silently downgraded:
 
 ```console
-$ nub install --node-linker pnp
+$ nub install
   × node-linker=pnp is not supported by nub; use `isolated` (default) or   # ❌
   │ `hoisted`
 ```
 
 Lifecycle scripts for dependencies are skipped by default, exactly as pnpm 10 does. A package runs install scripts only when allowlisted via `pnpm.onlyBuiltDependencies` (or `pnpm.allowBuilds`), or when Nub's gated default-trust floor vouches for it (see [Security](/docs/install#security)); `nub approve-builds` adds an entry interactively. `pnpm.neverBuiltDependencies` is a denylist that wins over any allow and over the floor.
 
-## Gaps
+## Unsupported
 
-- **Lockfile is v9-only.** v6 (pnpm 8) and v5.4 (pnpm 7) are not parsed — Nub refuses with `ERR_NUB_LOCKFILE_UNSUPPORTED_FORMAT` (exit 1) and leaves `node_modules` and the lockfile untouched. Re-lock with pnpm 9+ first.
-- **No `nodeLinker: pnp`.** Only `isolated` (default) and `hoisted`; `--node-linker pnp` errors.
-- **Virtual store is `node_modules/.nub/`, not `.pnpm/`.** Equivalent shape, not byte-shared; alternating tools relinks.
-- **Config is incumbent-gated.** A non-pnpm-incumbent project ignores `pnpm-workspace.yaml`, `pnpm.*`, `.pnpmfile.cjs`, and the `pnpm_config_*` env family. Nub identity ignores default pnpmfile hooks silently; npm, Yarn, and Bun incumbents warn.
-- **Some pnpm commands are not wired.** `deploy`, `clean`, `purge`, `recursive`, and `sbom` produce honest unsupported-command errors. Use the verb-level `-r` / `--filter` flags instead of `pnpm recursive`.
+A few pnpm surfaces produce honest unsupported-command errors rather than silent fallbacks:
+
+```text
+sbom        # CycloneDX/SPDX bill of materials — not yet wired
+deploy      # not yet wired; the operation stays manual
+```
+
+The `node-linker=pnp` install mode is also declined; see the table above.

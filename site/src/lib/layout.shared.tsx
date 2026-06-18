@@ -19,6 +19,6 @@ export function baseOptions(): BaseLayoutProps {
       { text: 'Blog', url: '/blog', active: 'nested-url' },
     ],
     githubUrl: 'https://github.com/nubjs/nub',
-    themeSwitch: { enabled: false },
+    themeSwitch: { enabled: true },
   };
 }
