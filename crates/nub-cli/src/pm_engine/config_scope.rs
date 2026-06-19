@@ -222,7 +222,7 @@ fn honors_overrides(role: Role, major: Option<u64>, minor: Option<u64>) -> bool 
 /// undeclared pnpm is assumed modern.
 fn honors_resolutions(role: Role, major: Option<u64>) -> bool {
     match role {
-        Role::Pnpm => major.map(|m| m >= 5).unwrap_or(true),
+        Role::Pnpm => major.is_none_or(|m| m >= 5),
         Role::Yarn => true,
         Role::Bun => true,
         Role::Nub => true,
@@ -243,7 +243,7 @@ fn honors_namespaced_overrides(role: Role) -> bool {
 /// `onlyBuiltDependencies`, and bun followed). `major` is bun's declared
 /// major; undeclared bun is assumed current (honors).
 pub(crate) fn honors_trusted_dependencies(role: Role, major: Option<u64>) -> bool {
-    role == Role::Bun && major.map(|m| m < 10).unwrap_or(true)
+    role == Role::Bun && major.is_none_or(|m| m < 10)
 }
 
 /// One graph-shaping field nub dropped because the active PM ignores it,

@@ -561,11 +561,10 @@ pub(crate) fn run_node_gyp_bootstrap(args: &[String]) -> Result<i32> {
 /// exclusion message), so this only fires for a future verb added to the
 /// registry before its family arm — a safety net, not a backlog marker.
 pub(crate) fn stub_error(typed: &str, args: &[String], pm_hint: &str) -> anyhow::Error {
-    let mut fallback = format!("{pm_hint} {typed}");
-    for arg in args {
-        fallback.push(' ');
-        fallback.push_str(arg);
-    }
+    let fallback = std::iter::once(format!("{pm_hint} {typed}"))
+        .chain(args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
     anyhow::anyhow!(
         "nub {typed}: not wired to the embedded engine yet\n\
          \x20\x20run it with your package manager for now:\n\

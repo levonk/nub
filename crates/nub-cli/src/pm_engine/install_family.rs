@@ -572,9 +572,8 @@ fn run_patch(typed: &str, args: &[String]) -> Result<i32> {
     let session = super::engine_session(globals.dir.as_deref())?;
     // Default the edit dir nub-side: the engine's fallback tempdir is
     // `aube-patch-…` and that path IS the success output (module doc).
-    if verb.edit_dir.is_none() {
-        verb.edit_dir = Some(nub_patch_edit_parent(&verb.package));
-    }
+    verb.edit_dir
+        .get_or_insert_with(|| nub_patch_edit_parent(&verb.package));
     // The success message ends with `` run "aube patch-commit '<dir>'" `` via
     // raw println; capture + rewrite (no children, no progress UI here).
     let (result, captured) = super::with_fd_captured(1, || {
@@ -792,12 +791,10 @@ fn yarn_gate_error(verb: &str, reason: &str, remedy: &str) -> anyhow::Error {
 
 /// `yarn <verb> <packages…>` remedy line for the gate message.
 fn yarn_remedy(yarn_verb: &str, packages: &[String]) -> String {
-    let mut remedy = format!("yarn {yarn_verb}");
-    for pkg in packages {
-        remedy.push(' ');
-        remedy.push_str(pkg);
-    }
-    remedy
+    std::iter::once(format!("yarn {yarn_verb}"))
+        .chain(packages.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ───────────────────────── install / ci (slice 2) ──────────────────────────
@@ -1129,12 +1126,10 @@ fn yarn_drift_reason(dir: &Path) -> Option<String> {
         .iter()
         .chain(manifest.dev_dependencies.iter())
         .chain(manifest.optional_dependencies.iter());
-    for (name, spec) in manifest_deps {
-        if !satisfied.contains(name.as_str()) {
-            return Some(format!("{name}@{spec} is not satisfied by yarn.lock"));
-        }
-    }
-    None
+    manifest_deps
+        .filter(|(name, _)| !satisfied.contains(name.as_str()))
+        .map(|(name, spec)| format!("{name}@{spec} is not satisfied by yarn.lock"))
+        .next()
 }
 
 // ───────────────────────── pnpm lockfile-version gate ──────────────────────────

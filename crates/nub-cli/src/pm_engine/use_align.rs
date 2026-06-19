@@ -229,14 +229,7 @@ pub(crate) fn refuse_unconvertible(root: &Path, target: &str, plan: &AlignPlan) 
     let manifest = aube_manifest::PackageJson::from_path(&root.join("package.json"))
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("reading package.json for the yarn conversion preflight")?;
-    let graph = match from_kind {
-        LockfileKind::Pnpm | LockfileKind::Aube => aube_lockfile::pnpm::parse(from),
-        LockfileKind::Npm | LockfileKind::NpmShrinkwrap => aube_lockfile::npm::parse(from),
-        LockfileKind::Yarn | LockfileKind::YarnBerry => aube_lockfile::yarn::parse(from, &manifest),
-        LockfileKind::Bun => aube_lockfile::bun::parse(from),
-    }
-    .map_err(|e| anyhow::anyhow!("{}", super::present::rewrite(&e.to_string())))
-    .with_context(|| format!("parsing {}", from.display()))?;
+    let graph = parse_source_graph(from, *from_kind, &manifest)?;
     if let Some(pkg) = workspace_protocol_consumer(&graph) {
         bail!(
             "yarn v1 does not support the `workspace:` protocol, but this project \
@@ -283,6 +276,25 @@ fn target_kind(target: &str) -> LockfileKind {
     }
 }
 
+/// Parse a source lockfile into its resolution graph, dispatching by kind.
+/// Errors are brand-rewritten and tagged with the file being parsed — shared
+/// by the conversion preflight ([`refuse_unconvertible`]) and the conversion
+/// itself ([`convert_lockfile`]).
+fn parse_source_graph(
+    from: &Path,
+    from_kind: LockfileKind,
+    manifest: &aube_manifest::PackageJson,
+) -> Result<aube_lockfile::LockfileGraph> {
+    match from_kind {
+        LockfileKind::Pnpm | LockfileKind::Aube => aube_lockfile::pnpm::parse(from),
+        LockfileKind::Npm | LockfileKind::NpmShrinkwrap => aube_lockfile::npm::parse(from),
+        LockfileKind::Yarn | LockfileKind::YarnBerry => aube_lockfile::yarn::parse(from, manifest),
+        LockfileKind::Bun => aube_lockfile::bun::parse(from),
+    }
+    .map_err(|e| anyhow::anyhow!("{}", super::present::rewrite(&e.to_string())))
+    .with_context(|| format!("parsing {}", from.display()))
+}
+
 /// Execute a [`AlignPlan::Convert`]: parse the source lockfile's graph and
 /// write it in the target's format through the engine's gated writers.
 /// Returns the path written. The caller removes the source file(s) only
@@ -301,14 +313,7 @@ pub(crate) fn convert_lockfile(
     let manifest = aube_manifest::PackageJson::from_path(&root.join("package.json"))
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("reading package.json for the lockfile conversion")?;
-    let graph = match from_kind {
-        LockfileKind::Pnpm | LockfileKind::Aube => aube_lockfile::pnpm::parse(from),
-        LockfileKind::Npm | LockfileKind::NpmShrinkwrap => aube_lockfile::npm::parse(from),
-        LockfileKind::Yarn | LockfileKind::YarnBerry => aube_lockfile::yarn::parse(from, &manifest),
-        LockfileKind::Bun => aube_lockfile::bun::parse(from),
-    }
-    .map_err(|e| anyhow::anyhow!("{}", super::present::rewrite(&e.to_string())))
-    .with_context(|| format!("parsing {}", from.display()))?;
+    let graph = parse_source_graph(from, from_kind, &manifest)?;
     let written = aube_lockfile::write_lockfile_as(root, &graph, &manifest, target_kind(target))
         .map_err(|e| anyhow::anyhow!("{}", super::present::rewrite(&e.to_string())))
         .with_context(|| format!("writing {}", lockfile_name(target)))?;

@@ -183,8 +183,7 @@ pub(crate) fn yarn_network_disabled(role: Role, root: &Path) -> bool {
 /// Yarn 1's own lockfile parser), distinct from Berry's `.yarnrc.yml`.
 fn yarn_offline_mirror_configured(root: &Path) -> bool {
     std::fs::read_to_string(root.join(".yarnrc"))
-        .ok()
-        .is_some_and(|c| classic_yarnrc_has_key(&c, "yarn-offline-mirror"))
+        .is_ok_and(|c| classic_yarnrc_has_key(&c, "yarn-offline-mirror"))
 }
 
 /// Whether the root (or any workspace member) manifest declares
@@ -194,17 +193,11 @@ fn yarn_offline_mirror_configured(root: &Path) -> bool {
 /// hoisted default for flat-layout incumbents) rather than silently dropping
 /// the directive.
 pub(crate) fn injected_deps_present(root: &Path) -> bool {
-    if manifest_has_injected(&root.join("package.json")) {
-        return true;
-    }
-    if let Ok(members) = aube_workspace::find_workspace_packages(root) {
-        for dir in members {
-            if manifest_has_injected(&dir.join("package.json")) {
-                return true;
-            }
-        }
-    }
-    false
+    manifest_has_injected(&root.join("package.json"))
+        || aube_workspace::find_workspace_packages(root)
+            .into_iter()
+            .flatten()
+            .any(|dir| manifest_has_injected(&dir.join("package.json")))
 }
 
 fn manifest_has_injected(manifest_path: &Path) -> bool {
@@ -443,24 +436,21 @@ fn npmrc_paths_inner(root: &Path, include_global: bool) -> Vec<PathBuf> {
 
 /// Read a scalar `.npmrc` key across the given paths (later wins).
 fn npmrc_value_in(paths: &[PathBuf], key: &str) -> Option<String> {
-    let mut value = None;
-    for path in paths {
-        if let Ok(content) = std::fs::read_to_string(path)
-            && let Some(v) = npmrc_scalar(&content, key)
-        {
-            value = Some(v);
-        }
-    }
-    value
+    // Last-wins across the precedence-ordered paths.
+    paths
+        .iter()
+        .filter_map(|path| {
+            let content = std::fs::read_to_string(path).ok()?;
+            npmrc_scalar(&content, key)
+        })
+        .last()
 }
 
 fn npmrc_bool_set_in(paths: &[PathBuf], key: &str) -> bool {
-    npmrc_value_in(paths, key)
-        .map(|v| {
-            let v = v.trim();
-            v.is_empty() || v.eq_ignore_ascii_case("true")
-        })
-        .unwrap_or(false)
+    npmrc_value_in(paths, key).is_some_and(|v| {
+        let v = v.trim();
+        v.is_empty() || v.eq_ignore_ascii_case("true")
+    })
 }
 
 /// Read a scalar `.npmrc` key from PROJECT-SCOPED `.npmrc` files only (the

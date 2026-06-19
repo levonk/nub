@@ -91,11 +91,12 @@ fn entries_from_bunfig(root: &Value) -> Vec<(String, String)> {
             );
         }
     }
-    if let Some(linker) = install.get("linker").and_then(Value::as_str) {
-        match linker {
-            "hoisted" | "isolated" => out.push(("nodeLinker".to_string(), linker.to_string())),
-            _ => {}
-        }
+    if let Some(linker) = install
+        .get("linker")
+        .and_then(Value::as_str)
+        .filter(|l| matches!(*l, "hoisted" | "isolated"))
+    {
+        out.push(("nodeLinker".to_string(), linker.to_string()));
     }
     // Bun's supply-chain age gate: `[install].minimumReleaseAge` → the engine's
     // `minimumReleaseAge` setting (same gate nub reads from `.npmrc`/pnpm
@@ -113,12 +114,9 @@ fn entries_from_bunfig(root: &Value) -> Vec<(String, String)> {
         .and_then(Value::as_integer)
         .filter(|n| *n >= 0)
     {
-        let minutes = if seconds == 0 {
-            0
-        } else {
-            // Ceiling division: a 30s gate maps to 1 minute, not 0.
-            (seconds + 59) / 60
-        };
+        // Ceiling division: a 30s gate maps to 1 minute, not 0 (and 0s → 0).
+        // (signed `i64::div_ceil` is still unstable, so spell it out.)
+        let minutes = (seconds + 59) / 60;
         out.push(("minimumReleaseAge".to_string(), minutes.to_string()));
     }
     if let Some(excludes) = install
