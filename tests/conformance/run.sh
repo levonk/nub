@@ -174,11 +174,12 @@ skip_reason() {
       # dependenciesMeta.injected is a pnpm-only mechanism — npm/yarn/bun have
       # no equivalent (and reject the workspace:* protocol the fixture uses).
       # pnpm records no inject entry in the lockfile (the dep is a plain
-      # `link:`), so the round-trip is stable and pnpm-scoped: it guards that
-      # nub frozen-reads pnpm's injected-workspace lockfile (dir A) and pnpm
-      # frozen-accepts nub's with zero churn (dir B). The hard-copy-vs-symlink
-      # layout is config/version-sensitive and outside the lockfile — not
-      # asserted here.
+      # `link:`), so this is pnpm-scoped: dir A guards that nub frozen-reads
+      # pnpm's injected-workspace lockfile. (Dir B is skip-by-design — pnpm
+      # 10.15.1 self-rejects injected dependenciesMeta under --frozen-lockfile
+      # even from its own lockfile; see the injected-deps--B case below.) The
+      # hard-copy-vs-symlink layout is config/version-sensitive and outside the
+      # lockfile — not asserted here.
       [ "$pm" != "pnpm" ] && echo "$fixture exercises pnpm-only injected deps; not represented in $pm"
       ;;
   esac
