@@ -1,0 +1,12 @@
+{
+  "name": "conform-platform-optional",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drop-in PM conformance fixture: an optionalDependency gated by os/cpu that does NOT install on the host. @esbuild/win32-x64 declares os:win32/cpu:x64 in its manifest, so it never materializes on linux (CI) or darwin (dev host) — yet the PM still serializes its entry WITH the os/cpu keys into the lockfile (pnpm package entry `os:`/`cpu:`; bun). Direction A asserts nub frozen-reads a lockfile that carries a platform-skipped optional without trying to install the unsupported binary. ms is a real always-installed dep so the node_modules assertion has something to check.",
+  "dependencies": {
+    "ms": "^2.1.3"
+  },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "0.25.0"
+  }
+}

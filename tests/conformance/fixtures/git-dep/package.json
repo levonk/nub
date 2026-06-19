@@ -1,0 +1,10 @@
+{
+  "name": "conform-git-dep",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drop-in PM conformance fixture: a git dependency pinned to a full commit SHA (git+https://…#<commit>) plus a github:owner/repo#ref shorthand. The real PM resolves and serializes the RESOLVED COMMIT + integrity into its lockfile (pnpm `resolution: {commit}` / npm `resolved` git URL with #commit / bun git entry); Direction A asserts nub frozen-reads that git entry. The commit is pinned (not a floating tag) so resolution is deterministic across runs.",
+  "dependencies": {
+    "ms": "git+https://github.com/vercel/ms.git#1c6264b795492e8fdecbc82cb8802fcfbfc08d26",
+    "is-number": "github:jonschlinkert/is-number#7.0.0"
+  }
+}

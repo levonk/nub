@@ -1,0 +1,12 @@
+{
+  "name": "conform-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Drop-in PM conformance fixture: multi-package workspace (neutral `workspaces` field) with a `workspace:*` internal dep. The real PM writes a MULTI-IMPORTER lockfile (pnpm `importers:` map / npm workspace `packages` entries / bun workspace blocks) and resolves `workspace:*` to the sibling on disk; Direction A asserts nub frozen-reads that multi-importer lockfile. The root carries one real registry dep so the node_modules assertion is meaningful.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "ms": "^2.1.3"
+  }
+}

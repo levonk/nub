@@ -9,3 +9,11 @@
 # read-as-drift bug (#16) was fixed by the vendor/aube pin bump c948a38. Its
 # Direction B stays an intended brand-boundary divergence (skip_reason in
 # run.sh), not a bug.
+
+# git-dep Direction B on yarn: `nub pm use yarn` keys a git dependency by its
+# resolved codeload tarball URL with version "0.0.0" and no `resolved:` line,
+# whereas yarn v1 keys it by the DECLARED git spec (ms@git+https://…#<commit>)
+# with the real package version + a `resolved:` URL — so yarn frozen-rejects
+# the key mismatch. Fixable in the yarn-classic conversion writer (vendor/aube
+# fork): emit the declared-spec key + real version + resolved URL for git deps.
+git-dep B yarn nub pm use yarn keys git deps by tarball URL with version 0.0.0; yarn expects the declared git-spec key + real version + resolved URL

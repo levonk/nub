@@ -36,7 +36,7 @@ NUB="$(cd "$(dirname "$NUB")" && pwd)/$(basename "$NUB")"
 NUB_VERSION="$("$NUB" --version 2>/dev/null || echo '?')"
 
 # Fixture list — each is a subdirectory of fixtures/
-ALL_FIXTURES=(simple peers scoped optional-deps alias file-dep peer-meta deep-graph postinstall overrides-ref overrides-nested patched-deps catalog)
+ALL_FIXTURES=(simple peers scoped optional-deps alias file-dep peer-meta deep-graph postinstall overrides-ref overrides-nested patched-deps catalog workspace git-dep platform-optional)
 FIXTURES=("$@")
 [ ${#FIXTURES[@]} -gt 0 ] || FIXTURES=("${ALL_FIXTURES[@]}")
 
@@ -132,6 +132,16 @@ skip_reason() {
     # mismatches, not nub bugs.
     alias--A--yarn) echo "yarn v1 alias syntax diverges from npm: protocol" ;;
     alias--B--yarn) echo "yarn v1 alias syntax diverges from npm: protocol" ;;
+
+    # The workspace fixture declares its internal dep with the `workspace:*`
+    # protocol. Only pnpm and bun (and yarn-berry) understand that protocol;
+    # npm and yarn-v1 reject it outright (npm: EUNSUPPORTEDPROTOCOL, yarn-v1
+    # can't resolve `@conform/util@workspace:*` off the npm registry), so they
+    # never write a comparable lockfile. Ecosystem-level mismatch, not a nub bug.
+    workspace--A--npm)  echo "npm does not support the workspace: protocol (EUNSUPPORTEDPROTOCOL)" ;;
+    workspace--B--npm)  echo "npm does not support the workspace: protocol (EUNSUPPORTEDPROTOCOL)" ;;
+    workspace--A--yarn) echo "yarn v1 does not support the workspace: protocol" ;;
+    workspace--B--yarn) echo "yarn v1 does not support the workspace: protocol" ;;
   esac
 
   # Feature fixtures are scoped to the PM whose lockfile encodes the diverging
