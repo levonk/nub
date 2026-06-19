@@ -180,15 +180,9 @@ fn is_ts_parent(ext: &str) -> bool {
 /// JS `extname` semantics over an absolute path (strip a `?query` first; ext is
 /// the substring from the last `.`).
 fn extname(path: &str) -> String {
-    let p = match path.find('?') {
-        Some(i) => &path[..i],
-        None => path,
-    };
+    let p = path.split_once('?').map_or(path, |(head, _)| head);
     // Match Node's path.extname: only count a dot in the final path segment.
-    let base = match p.rfind(['/', '\\']) {
-        Some(i) => &p[i + 1..],
-        None => p,
-    };
+    let base = p.rsplit(['/', '\\']).next().unwrap_or(p);
     match base.rfind('.') {
         // A leading dot (dotfile) has no extension.
         Some(0) => String::new(),
@@ -242,11 +236,9 @@ fn is_node_modules(path: &str) -> bool {
 }
 
 fn is_file(path: &str) -> bool {
-    std::fs::metadata(path)
-        .map(|m| m.is_file())
-        .unwrap_or(false)
+    std::fs::metadata(path).is_ok_and(|m| m.is_file())
 }
 
 fn is_dir(path: &str) -> bool {
-    std::fs::metadata(path).map(|m| m.is_dir()).unwrap_or(false)
+    std::fs::metadata(path).is_ok_and(|m| m.is_dir())
 }

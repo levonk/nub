@@ -90,7 +90,8 @@ fn yaml_to_json(yaml: &yaml_rust2::Yaml) -> serde_json::Value {
                 .collect();
             serde_json::Value::Object(obj)
         }
-        yaml_rust2::Yaml::Null | yaml_rust2::Yaml::BadValue => serde_json::Value::Null,
-        yaml_rust2::Yaml::Alias(_) => serde_json::Value::Null,
+        yaml_rust2::Yaml::Null | yaml_rust2::Yaml::BadValue | yaml_rust2::Yaml::Alias(_) => {
+            serde_json::Value::Null
+        }
     }
 }

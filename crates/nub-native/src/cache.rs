@@ -38,6 +38,16 @@ const NUB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// The module format a stored body's leading format byte encodes: `b'c'` ⇒
+/// commonjs, anything else (`b'm'`) ⇒ module.
+fn format_for(byte: Option<u8>) -> &'static str {
+    if byte == Some(b'c') {
+        "commonjs"
+    } else {
+        "module"
+    }
+}
+
 #[napi(object)]
 pub struct CachedTransformResult {
     /// "commonjs" | "module".
@@ -66,8 +76,7 @@ pub fn transform_cached(
     format_byte: String,
     cache_dir: Option<String>,
 ) -> Result<CachedTransformResult> {
-    let fmt = format_byte.as_str();
-    let format = if fmt == "c" { "commonjs" } else { "module" };
+    let format = if format_byte == "c" { "commonjs" } else { "module" };
 
     let key = cache_key(&source, &ext, &tsconfig_hash, &pkg_type);
 
@@ -75,14 +84,8 @@ pub fn transform_cached(
     if let Some(dir) = cache_dir.as_deref() {
         if let Some(body) = cache_get(dir, &key) {
             // body[0] is the stored format byte; the rest is the final code.
-            let stored_fmt = body.as_bytes().first().copied();
-            let stored_format = if stored_fmt == Some(b'c') {
-                "commonjs"
-            } else {
-                "module"
-            };
             return Ok(CachedTransformResult {
-                format: stored_format.to_string(),
+                format: format_for(body.as_bytes().first().copied()).to_string(),
                 code: body[1..].to_string(),
                 errors: Vec::new(),
             });
@@ -148,13 +151,11 @@ fn exe_hash() -> &'static str {
     static EXE_HASH: OnceLock<String> = OnceLock::new();
     EXE_HASH
         .get_or_init(|| {
-            let bytes = std::env::current_exe()
+            std::env::current_exe()
                 .ok()
-                .and_then(|p| std::fs::read(p).ok());
-            match bytes {
-                Some(b) => blake3::hash(&b).to_hex().to_string(),
-                None => String::new(),
-            }
+                .and_then(|p| std::fs::read(p).ok())
+                .map(|b| blake3::hash(&b).to_hex().to_string())
+                .unwrap_or_default()
         })
         .as_str()
 }
