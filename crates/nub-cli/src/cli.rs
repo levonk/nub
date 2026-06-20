@@ -1010,6 +1010,9 @@ fn run_nub() -> Result<i32> {
     let mut version = false;
     let mut watch = false;
     let mut show_help = false;
+    // `-h` → curated page, `--help` → verbose reference (the two intentionally
+    // diverge; see run_help). Recorded so the short-circuit can pick the page.
+    let mut help_verbose = false;
     let mut show_warnings = false;
     let mut silent = false;
     // Top-level `--node`: provision the project's Node (version management stays
@@ -1041,7 +1044,11 @@ fn run_nub() -> Result<i32> {
         }
         match arg.as_str() {
             "--version" | "-v" | "-V" => version = true,
-            "--help" | "-h" => show_help = true,
+            "-h" => show_help = true,
+            "--help" => {
+                show_help = true;
+                help_verbose = true;
+            }
             "--watch" => watch = true,
             "--node" => compat = true,
             "--silent" | "-s" => silent = true,
@@ -1174,18 +1181,36 @@ fn run_nub() -> Result<i32> {
         env::set_current_dir(dir)?;
     }
 
+    // `--node` wins over nub's help/version short-circuit: `nub --node -h` and
+    // `nub --node -v` print the resolved Node's own help/version (the project's
+    // pinned Node, vanilla), not nub's. Strip nub-owned `--node` and pass the
+    // Node-native flag straight through to compat-mode spawn. `nub run --node` /
+    // `nubx --node` carry their own grammar and never reach this top-level path.
+    if compat && (version || show_help) {
+        let flag = if version {
+            "-v"
+        } else if help_verbose {
+            "--help"
+        } else {
+            "-h"
+        };
+        return run_file_with_compat(&[flag.to_string()], true);
+    }
+
     if version {
         print_version();
         return Ok(0);
     }
 
     if show_help {
-        // `nub <sub> --help`/`-h` → that subcommand's help; otherwise top-level.
+        // `nub <sub> -h`/`--help` → that subcommand's help; otherwise top-level.
+        // Any recognized command routes (native, node/pm/agent, or an engine verb);
+        // unknown words fall through to the top-level page.
         let sub = rest
             .first()
             .map(String::as_str)
-            .filter(|s| SUBCOMMANDS.contains(s));
-        run_help(sub);
+            .filter(|s| is_help_routable(s));
+        run_help(sub, help_verbose);
         return Ok(0);
     }
 
@@ -1214,11 +1239,9 @@ fn run_nub() -> Result<i32> {
         if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
             return run_file_with_compat(&["-".to_string()], compat);
         }
-        // Orient the first-time user instead of exiting silently. `run_help(None)`
-        // prints the same listing as `nub --help` (clap's `try_parse_from`), so
-        // bare `nub` and `nub --help` agree — and it returns cleanly rather than
-        // `parse_from`'s process-exit.
-        run_help(None);
+        // Orient the first-time user instead of exiting silently — the curated
+        // page (same as `nub -h`), returning cleanly rather than process-exiting.
+        run_help(None, false);
         Ok(0)
     } else {
         let first = &rest[0];
@@ -1757,7 +1780,10 @@ fn dispatch_subcommand(rest: Vec<String>) -> Result<i32> {
             yes,
         }) => run_upgrade(version.as_deref(), dry_run, yes),
         Some(Command::Help { command }) => {
-            run_help(command.as_deref());
+            // `nub help <cmd>` routes to that command's help; `nub help` alone →
+            // the curated top-level page. Same router as `nub <cmd> -h`.
+            let sub = command.as_deref().filter(|s| is_help_routable(s));
+            run_help(sub, false);
             Ok(0)
         }
         Some(Command::Install {
@@ -1853,7 +1879,7 @@ fn run_nubx() -> Result<i32> {
         }
         match arg.as_str() {
             "--help" | "-h" => {
-                run_help(Some("nubx"));
+                run_help(Some("nubx"), arg == "--help");
                 return Ok(0);
             }
             "--version" | "-v" | "-V" => {
@@ -4305,18 +4331,321 @@ fn print_version() {
     }
 }
 
-fn run_help(command: Option<&str>) {
-    // Re-parse with `--help` to obtain clap's help. `try_parse_from` returns it
-    // as `Err(DisplayHelp)` carrying the formatted text; print it (clap routes
-    // DisplayHelp/DisplayVersion to stdout, real errors to stderr) instead of
-    // discarding it, which left `nub <sub> --help` / `nub help <sub>` silent.
-    let result = match command {
-        Some(cmd) => Cli::try_parse_from(["nub", cmd, "--help"]),
-        None => Cli::try_parse_from(["nub", "--help"]),
+/// Native clap subcommands whose `--help` is rendered by clap directly.
+const CLAP_HELP_COMMANDS: &[&str] = &[
+    "run", "watch", "exec", "nubx", "upgrade", "install", "i", "ci",
+];
+
+/// True for any word `nub <word> -h` / `nub help <word>` can route to a real help
+/// page: a native clap command, the `node`/`pm`/`agent` groups, or an engine verb
+/// (canonical or alias). Unknown words fall through to the top-level page instead
+/// of exiting silently — the routing inconsistency the help-router fix addresses.
+fn is_help_routable(word: &str) -> bool {
+    CLAP_HELP_COMMANDS.contains(&word)
+        || matches!(word, "node" | "pm" | "agent")
+        || crate::pm_engine::lookup_verb(word).is_some()
+}
+
+/// The help router. `command = None` prints the top-level page (`-h` curated,
+/// `--help` verbose); a command routes to its own help, consistently across the
+/// `nub <cmd> -h`, `nub help <cmd>`, and leaf forms. Engine verbs dispatch their
+/// real `--help` through the embedded engine; `node`/`pm`/`agent` use their
+/// bespoke usage; native verbs render clap's help.
+fn run_help(command: Option<&str>, verbose: bool) {
+    let Some(cmd) = command else {
+        print!(
+            "{}",
+            if verbose {
+                render_verbose_help()
+            } else {
+                render_curated_help()
+            }
+        );
+        return;
     };
+
+    // `node` / `pm` / `agent`: bespoke usage (their own help guards print the
+    // verb listing). Route through the same entry points the live commands use so
+    // `nub help node` and `nub node --help` agree.
+    match cmd {
+        "node" => {
+            let _ = run_node(&["--help".to_string()]);
+            return;
+        }
+        "pm" => {
+            let _ = run_pm(&["--help".to_string()]);
+            return;
+        }
+        "agent" => {
+            let _ = crate::agent::run(&["--help".to_string()]);
+            return;
+        }
+        _ => {}
+    }
+
+    // Engine verbs (`add`/`remove`/`why`/…): dispatch the verb's own `--help` so
+    // `nub help add` matches `nub add --help` exactly (both go through the family
+    // module's help rendering). Previously `nub help add` exited silently.
+    if let Some(spec) = crate::pm_engine::lookup_verb(cmd) {
+        let pm = env::current_dir()
+            .ok()
+            .map(|d| suggest_package_manager(&d))
+            .unwrap_or_else(|| "npm".to_string());
+        let _ = crate::pm_engine::dispatch_verb(spec, cmd, &["--help".to_string()], &pm);
+        return;
+    }
+
+    // Native clap commands (and any other word): clap renders the help. For a word
+    // clap doesn't recognize this still falls back to the top-level help via the
+    // `is_help_routable` gate at the call sites, so this only sees real commands.
+    let result = Cli::try_parse_from(["nub", cmd, "--help"]);
     if let Err(e) = result {
         let _ = e.print();
     }
+}
+
+/// Bold a header for the help pages when stdout is a TTY (or FORCE_COLOR is set)
+/// and NO_COLOR is unset. Plain text otherwise — same predicate family as the
+/// stream-prefix coloring, so piped/redirected help stays clean.
+fn help_bold(s: &str) -> String {
+    let color = (std::io::IsTerminal::is_terminal(&std::io::stdout())
+        || std::env::var_os("FORCE_COLOR").is_some())
+        && std::env::var_os("NO_COLOR").is_none();
+    if color {
+        format!("\x1b[1m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+/// `nub -h` — the curated, human-readable page. It starts with Nub's headline
+/// runtime/run surfaces, then mirrors pnpm's grouped package-manager help with
+/// the full recognized PM surface. The footer points at `nub --help` for the
+/// expanded Node flag and environment-variable reference.
+fn render_curated_help() -> String {
+    let v = env!("CARGO_PKG_VERSION");
+    format!(
+        "\
+nub {v} — the JavaScript toolkit that augments Node.js instead of replacing it
+
+{usage}
+  nub <file> [args...]        run a file (.js/.ts/.jsx/.tsx), TypeScript just works
+  nub --node <file> [args]    run on the project's pinned Node, vanilla (no augmentation)
+  nub <command> [args...]     run a command (below)
+  nub help <command>          show help for a command
+
+{headline}
+  <file> [args...]            run a JavaScript or TypeScript file
+  run <script>                run a package.json script
+  watch <file>                run a file and restart on changes
+  nubx <pkg>                  fetch and run a package binary
+
+{runtime}
+  -                           read script from stdin
+  --                          end of nub options; the rest is the script's argv
+  -e, --eval <code>           evaluate <code>
+  -p, --print <code>          evaluate <code> and print the result
+  -c, --check                 syntax-check the file without running it
+  -r, --require <m>           preload a CommonJS module before the script
+  --import <m>                preload an ES module before the script
+  --node                      run on plain Node (no augmentation)
+  -v, --version               print the nub version
+
+{pm}
+  Manage dependencies:
+    add, a                    add dependencies (-D dev, -O optional, -g global)
+    install, i                install from package.json + lockfile
+    ci                        clean, strict install from the lockfile
+    import                    generate a lockfile from another PM's lockfile
+    link, ln / unlink         link or unlink local packages
+    remove, rm                remove dependencies
+    update, up                update dependencies within range
+    dedupe                    remove duplicated packages
+    prune                     remove extraneous packages
+    rebuild, rb               rebuild native modules
+    fetch                     fetch packages into the store
+    patch / patch-commit / patch-remove   author package patches
+    approve-builds / ignored-builds       manage build-script approval
+
+  Review dependencies:
+    list, ls / la / ll        list installed dependencies
+    why, w                    explain why a package is installed
+    outdated                  list dependencies with newer versions available
+    audit                     check installed packages for known vulnerabilities
+    licenses                  list dependency licenses
+    deprecations / peers      inspect registry deprecations or peer issues
+    view, info, show, v       show registry metadata for a package
+    search                    search the registry through npm fallback
+    query / check / bin / root / sbom
+
+  Run scripts and bins:
+    run <script>              run a package.json script
+    exec <bin>                run a node_modules/.bin binary
+    dlx / create              fetch and run a package or create template
+
+  Publish and registry:
+    publish / pack / version  publish, pack, or bump the package version
+    dist-tag / deprecate / undeprecate / unpublish
+    login / logout / whoami / owner / token / stage
+
+  Store and config:
+    store / cache             inspect and maintain the content-addressable store
+    cat-file / cat-index / find-hash
+    config, c / get / set / pkg / set-script
+
+{toolchain}
+  node                        manage Node versions (install / ls / uninstall / pin)
+  pm                          manage the project's package manager (which / use / shim)
+  upgrade                     upgrade nub itself
+
+{footer}
+",
+        v = v,
+        usage = help_bold("Usage:"),
+        headline = help_bold("Headline commands:"),
+        runtime = help_bold("Runtime options (passed through to Node):"),
+        pm = help_bold("Package manager commands:"),
+        toolchain = help_bold("Manage the toolchain:"),
+        footer =
+            help_bold("See `nub --help` for the expanded Node flag + environment-variable reference.")
+    )
+}
+
+/// `nub --help` — the verbose reference: nub's command surface plus a fuller
+/// Node runtime flag and environment-variable reference. The power-user / agent
+/// form. For the exact, version-correct list of the project's resolved Node, the
+/// footer points at `nub --node --help` (which passes through to that Node).
+fn render_verbose_help() -> String {
+    let v = env!("CARGO_PKG_VERSION");
+    format!(
+        "\
+nub {v} — the JavaScript toolkit that augments Node.js instead of replacing it
+
+{usage}
+  nub [options] <file> [args...]
+  nub [options] --node <file> [args...]
+  nub [options] -e <code>  |  -p <code>  |  - (stdin)
+  nub <command> [args...]
+  nub help <command>
+
+{commands}
+  Run code:
+    run <script>             run a package.json script (workspace-aware)
+    exec <bin> / nubx <bin>  run a node_modules/.bin binary
+    nubx <pkg> / dlx <pkg>   fetch-and-run a package's bin
+    watch <file>             run a file in watch mode
+
+  Manage dependencies:
+    install, i               install from package.json + lockfile
+    ci                       clean, strict install from the lockfile
+    add, a                   add dependencies
+    remove, rm               remove dependencies
+    update, up               update within range
+    import                   generate a lockfile from another PM's lockfile
+    dedupe                   remove duplicated packages
+    prune                    remove extraneous packages
+    rebuild, rb              rebuild native modules
+    link, ln / unlink        link / unlink a local package
+    patch / patch-commit / patch-remove   author a package patch
+    approve-builds / ignored-builds       manage build-script approval
+
+  Inspect dependencies:
+    list, ls / why / outdated / audit / licenses
+    view / search / bin / root / query / check / sbom
+
+  Publish and registry:
+    publish / pack / version / dist-tag
+    login / logout / whoami / owner / token
+
+  Manage the toolchain:
+    node                     manage Node versions (install / ls / uninstall / pin)
+    pm                       manage the project's package manager
+    upgrade                  upgrade nub itself
+
+  Store and config:
+    store / cache            manage the content-addressable store
+    config / get / set       manage configuration
+
+{nubopts}
+  --cwd <dir>          run as if started in <dir>
+  -s, --silent         suppress nub's non-error output
+  --verbose            increase nub's log verbosity (repeatable)
+  --color[=<when>]     color mode: auto (default), always, never
+  --env-file <file>    load environment variables from <file>
+  --node               run on plain Node, no augmentation (the compat escape hatch)
+  -v, --version        print the nub version
+  -h, --help           print help (`-h` curated, `--help` this full reference)
+
+{noderun}
+  -                              script read from stdin
+  --                             indicate the end of node options
+  -e, --eval <code>              evaluate <code>
+  -p, --print <code>             evaluate <code> and print the result
+  -c, --check                    syntax-check the script without executing it
+  -r, --require <module>         preload a CommonJS module
+  --import <module>              preload an ES module
+  -C, --conditions <name>        additional conditional export/import conditions
+  --input-type <type>            'module' or 'commonjs' for --eval / stdin input
+  --watch                        run in watch mode
+  --watch-path <path>            path to watch (repeatable)
+  --watch-preserve-output        preserve output across watch restarts
+  --env-file <file>              load environment variables from a file
+  --enable-source-maps           enable source-map support for stack traces
+  --inspect[=[host:]port]        activate the inspector
+  --inspect-brk[=[host:]port]    activate the inspector and break at start
+  --inspect-wait[=[host:]port]   activate the inspector and wait until attached
+  --cpu-prof / --heap-prof       write a V8 CPU / heap profile on exit
+  --prof                         generate V8 profiler tick data
+  --title <title>                set process.title on startup
+  --max-old-space-size <mb>      set V8's old-space size limit
+  --stack-trace-limit <n>        set Error.stackTraceLimit
+  --no-warnings                  silence all process warnings
+  --disable-warning <code|type>  silence a specific warning
+  --throw-deprecation            throw on use of deprecated APIs
+  --pending-deprecation          emit pending deprecation warnings
+  --no-deprecation               silence deprecation warnings
+  --redirect-warnings <file>     write warnings to a file instead of stderr
+  --trace-warnings               show stack traces for process warnings
+  --trace-deprecation            show stack traces for deprecations
+  --trace-exit / --trace-uncaught / --trace-sync-io
+  --report-on-fatalerror / --report-uncaught-exception / --report-on-signal
+  --report-dir <dir> / --report-filename <file>
+  --preserve-symlinks / --preserve-symlinks-main
+  --use-largepages <mode> / --zero-fill-buffers
+  --v8-options                   print V8 command-line options
+  --                             (and every other `node` flag — passthrough)
+
+{nodeenv}
+  NODE_OPTIONS               space-separated list of node CLI options applied at startup
+  NODE_ENV                   the environment ('production' / 'development' / …)
+  NODE_PATH                  ':'-separated directories prepended to the module search path
+  NODE_EXTRA_CA_CERTS        path to additional CA certificates, read once at startup
+  NODE_TLS_REJECT_UNAUTHORIZED  set to 0 to disable TLS certificate validation
+  NODE_NO_WARNINGS           set to 1 to silence process warnings
+  NODE_PENDING_DEPRECATION   set to 1 to emit pending deprecation warnings
+  NODE_PRESERVE_SYMLINKS     set to 1 to preserve symlinks when resolving modules
+  NODE_REDIRECT_WARNINGS     write warnings to the given path instead of stderr
+  NODE_V8_COVERAGE           directory to write V8 coverage JSON to
+  NODE_DEBUG                 ','-separated core modules that should print debug output
+  NODE_COMPILE_CACHE         directory for the on-disk module compile cache
+  UV_THREADPOOL_SIZE         number of threads in libuv's thread pool
+  FORCE_COLOR / NO_COLOR     force / disable colored output
+  TZ                         the timezone configuration
+
+{footer1}
+{footer2}
+",
+        v = v,
+        usage = help_bold("Usage:"),
+        commands = help_bold("Commands:"),
+        nubopts = help_bold("Nub options:"),
+        noderun = help_bold("Common Node runtime flags (passed through to Node):"),
+        nodeenv = help_bold("Common environment variables:"),
+        footer1 = help_bold(
+            "For the exact flag set of this project's pinned Node, run `nub --node --help`."
+        ),
+        footer2 = "Documentation: https://nubjs.com/docs"
+    )
 }
 
 /// Discover the project's Node for the read-only status paths (`nub node` /
@@ -6775,6 +7104,36 @@ mod tests {
     fn help_flag_short_circuits() {
         let err = parse(&["nub", "--help"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    #[test]
+    fn curated_and_verbose_help_diverge() {
+        // `-h` is the curated, human-readable page; `--help` is the exhaustive
+        // reference. They intentionally differ — the verbose page carries Node
+        // flags + env vars the curated page deliberately omits.
+        let curated = render_curated_help();
+        let verbose = render_verbose_help();
+        assert_ne!(curated, verbose);
+        // Curated leads with the file runner and points at the verbose form.
+        assert!(curated.contains("TypeScript just works"));
+        assert!(curated.contains("nub --help"));
+        // Verbose carries the Node flag + env-var reference the curated page omits.
+        assert!(verbose.contains("NODE_OPTIONS"));
+        assert!(verbose.contains("--enable-source-maps"));
+        assert!(!curated.contains("NODE_OPTIONS"));
+    }
+
+    #[test]
+    fn help_routes_every_real_command_word() {
+        // The router fix: `nub help <cmd>` / `nub <cmd> -h` must reach a real page
+        // for native verbs, the node/pm/agent groups, AND engine verbs (canonical
+        // or alias) — the engine verbs (`add`, `why`, `rm`, …) previously fell
+        // through to a silent exit.
+        for word in ["run", "install", "node", "pm", "agent", "add", "rm", "why", "publish"] {
+            assert!(is_help_routable(word), "`{word}` should route to a help page");
+        }
+        // Unknown words fall through to the top-level page rather than erroring.
+        assert!(!is_help_routable("definitely-not-a-command"));
     }
 
     #[test]
