@@ -592,22 +592,37 @@ pub fn spawn_node(config: &SpawnConfig<'_>) -> Result<SpawnResult> {
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit());
 
+    // Put the Node child in its OWN process group (setpgid at exec) so an
+    // interactive Ctrl-C is delivered EXACTLY ONCE. Without this the child shares
+    // nub's process group on the controlling TTY, so a terminal Ctrl-C makes the
+    // kernel deliver SIGINT to the WHOLE foreground group — the child receives it
+    // directly — AND nub's forwarder (below) re-sends it, so the child's
+    // `process.on('SIGINT')` fired TWICE per Ctrl-C (issue #26; plain `node` fires
+    // once). With the child in its own group, the TTY signals only nub's group;
+    // nub then forwards once via the group target below — a single delivery that
+    // matches plain Node, while a non-TTY `kill -INT <nub>` still reaches the child
+    // through that same forward (the TTY is not the only path, so own-group is
+    // required for both cases to be correct). Forwarding to the group `-pid` (not a
+    // bare pid) also reaches anything the Node child itself spawns (dev-server
+    // subprocesses). No-op off Unix; Windows has no process-group SIGINT semantics
+    // and keeps its existing behavior.
+    group_on_spawn(&mut cmd);
+
     let mut child = cmd
         .spawn()
         .with_context(|| format!("failed to spawn {}", config.node.path))?;
 
-    // Forward Ctrl-C to the child so it reaches dev servers. Registered once;
-    // the current target lives in a global atomic (see `ctrl_c`). The file-run
-    // child IS `node` (the leaf), so a positive single-pid target is correct —
-    // the script path uses group targeting because an `sh -c` sits in the middle.
-    #[cfg(unix)]
-    ctrl_c::track(child.id() as i32);
+    // Forward terminating/diagnostic signals to the child's process GROUP.
+    // Registered once; the current target lives in a global atomic (see `ctrl_c`).
+    // The child is its own group leader (see `group_on_spawn` above), so the
+    // negative target signals the child and its descendants exactly once.
+    // (No-op off Unix.)
+    track_child_group(child.id());
 
     let status = child.wait().with_context(|| "waiting for Node child")?;
 
-    // Stop forwarding to this (now-exited) pid before returning.
-    #[cfg(unix)]
-    ctrl_c::untrack();
+    // Stop forwarding to this (now-exited) group before returning. (No-op off Unix.)
+    untrack_child();
 
     Ok(SpawnResult { status })
 }
@@ -1766,6 +1781,80 @@ mod tests {
         assert_eq!(ctrl_c::current(), -4321, "group target is the negated pid");
         untrack_child();
         assert_eq!(ctrl_c::current(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigint_reaches_an_own_group_child_exactly_once() {
+        // Regression for issue #26: the file-run child fired `process.on('SIGINT')`
+        // TWICE per interactive Ctrl-C. Root cause: the child shared nub's process
+        // group on the controlling TTY, so a terminal Ctrl-C delivered SIGINT to the
+        // whole foreground group (the child got it directly) AND nub's forwarder
+        // re-sent it. The fix puts the child in its OWN process group (`setpgid` via
+        // `group_on_spawn`), so the TTY signals only nub's group and the forwarder's
+        // single group-targeted relay is the lone delivery — exactly like plain Node.
+        //
+        // This test reproduces that topology in-process: a child placed in its own
+        // group (so the test runner's own group-SIGINT, if any, can't leak in), a
+        // SIGINT trap that COUNTS deliveries, and a single forwarded SIGINT to the
+        // child's group. The handler must run exactly once and the child must exit
+        // 130 (128 + SIGINT) — the byte-for-byte-with-Node contract. (The true
+        // interactive TTY Ctrl-C is not reproducible in CI without a pty; this pins
+        // the own-group + single-forward invariant that makes it correct.)
+        let _serial = CTRL_C_TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        ctrl_c::untrack();
+
+        let marker = env::temp_dir().join(format!(
+            "nub-sigint-count-{}-{}.marker",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_file(&marker);
+
+        // On SIGINT: append a line to the marker (so a double delivery would write
+        // two), then exit 130. Until then, block on a backgrounded sleep so the trap
+        // fires promptly. The child is its own group leader (`group_on_spawn`).
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(format!(
+            "trap 'echo x >>{m}; exit 130' INT; sleep 5 & wait",
+            m = marker.display()
+        ));
+        group_on_spawn(&mut cmd);
+        let mut child = cmd.spawn().expect("spawn sigint-count child");
+
+        // Forward to the child's GROUP — the single, sole delivery path now that the
+        // child is in its own group (nothing else signals it).
+        track_child_group(child.id());
+
+        // Let the trap install before delivering.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        // One SIGINT to the child's process group — the forwarder relays exactly one.
+        // SAFETY: kill(2) on the child's own group; benign if it already exited.
+        unsafe {
+            libc::kill(-(child.id() as i32), libc::SIGINT);
+        }
+
+        let status = loop_wait(&mut child, std::time::Duration::from_secs(5));
+        untrack_child();
+
+        let deliveries = fs::read_to_string(&marker)
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        let _ = fs::remove_file(&marker);
+
+        assert_eq!(
+            deliveries, 1,
+            "SIGINT handler must fire EXACTLY once (issue #26 double-emit regression)"
+        );
+        assert_eq!(
+            status.and_then(|s| s.code()),
+            Some(130),
+            "child must exit 130 (128 + SIGINT) via its own trap"
+        );
     }
 
     #[cfg(unix)]
