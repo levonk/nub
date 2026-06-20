@@ -88,3 +88,4 @@ epics/
 # disk for reference but never committed; regenerate via tests/bench/run-*.sh.
 tests/bench/RESULTS.md
 /bun.lockb
+.claude/jobs/
