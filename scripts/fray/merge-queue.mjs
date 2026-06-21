@@ -34,6 +34,64 @@ const PROJECT_DIR = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const QUEUE_PATH = join(PROJECT_DIR, '.fray', 'merge-queue.jsonl');
 
 /**
+ * Flip a thread's frontmatter to `status: done` + append a brief `statusText` noting the
+ * merge. Called ONLY on a CONFIRMED merge (never on close/error), so the loop closes fully:
+ * agent push+exit → enqueue → drain merges → drain marks the thread done — the orchestrator
+ * never hand-edits thread status after a merge again.
+ *
+ * In-place frontmatter edit, fail-open (read-modify-write; any error → return false, no throw).
+ * Re-reads immediately before writing to tolerate a concurrent body edit; only the `status:`
+ * and `statusText:` lines are rewritten, never the body.
+ * @param {string} thread  slug (no `.fray/` prefix, no `.md`)
+ * @param {number|string} pr
+ * @returns {boolean} true if the file was updated
+ */
+export function markThreadDone(thread, pr) {
+  if (!thread) return false;
+  const path = join(PROJECT_DIR, '.fray', `${String(thread).replace(/^\.fray\//, '').replace(/\.md$/, '')}.md`);
+  let src;
+  try {
+    src = readFileSync(path, 'utf8');
+  } catch {
+    return false; // no such thread file → fail-open
+  }
+  const fm = src.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return false; // no frontmatter → don't touch
+
+  let out = src;
+  // status: → done (only within the frontmatter block; the first status: line).
+  if (/^status:\s*\S+/m.test(out)) {
+    if (/^status:\s*done\s*$/m.test(out)) {
+      // already done — still refresh statusText below, but no status change needed
+    } else {
+      out = out.replace(/^status:\s*\S.*$/m, 'status: done');
+    }
+  } else {
+    // no status line — insert one right after the opening fence
+    out = out.replace(/^---\n/, `---\nstatus: done\n`);
+  }
+
+  const note = `Merged PR #${pr} — shipped. (auto-set by merge-queue drain on confirmed merge.)`;
+  if (/^statusText:\s*/m.test(out)) {
+    out = out.replace(/^statusText:.*$/m, `statusText: "${note}"`);
+  } else {
+    // insert statusText right after the status line
+    out = out.replace(/^status:\s*done\s*$/m, `status: done\nstatusText: "${note}"`);
+  }
+
+  if (out === src) return false;
+  // Atomic-ish in-place write (single small file; rename keeps a concurrent reader consistent).
+  const tmp = `${path}.tmp.${process.pid}`;
+  try {
+    writeFileSync(tmp, out);
+    renameSync(tmp, path);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Read + parse the queue, skipping malformed lines. Missing file → [].
  * @returns {Record<string, any>[]}
  */
@@ -137,7 +195,12 @@ export function drain() {
       continue;
     }
     const state = prState(e.pr);
-    if (state === 'MERGED' || state === 'CLOSED') continue; // done/abandoned → drop
+    if (state === 'MERGED') {
+      // CONFIRMED merge → flip the owning thread to done (closes the loop), then drop the entry.
+      if (e.thread) markThreadDone(e.thread, e.pr);
+      continue;
+    }
+    if (state === 'CLOSED') continue; // closed-without-merge (abandoned) → drop, do NOT mark thread done
     keep.push(e); // OPEN or indeterminate → keep
     if (state === 'OPEN') open.push(e);
   }
