@@ -3,7 +3,7 @@ title: GitHub Action
 description: A drop-in replacement for the official setup-node action. Swap one line in your workflow and Nub installs itself, then provisions the project's pinned Node automatically.
 ---
 
-Swap `actions/setup-node` for `nubjs/setup-nub` and the rest of your workflow keeps working:
+A drop-in for [`actions/setup-node`](https://github.com/actions/setup-node). Swap one line and your workflow keeps working:
 
 ```diff
 steps:
@@ -14,35 +14,20 @@ steps:
   - run: nub run test
 ```
 
-The action installs the `nub` CLI onto the runner. From there Nub resolves and provisions the project's pinned Node itself, so you no longer pick a Node version in the workflow — the pin in `.node-version` / `.nvmrc` / `engines.node` is the single source of truth.
+The action installs the `nub` CLI and eagerly provisions the project's pinned Node — downloaded and cached during setup, before any of your steps run. The pin is resolved from the project files on disk (`devEngines.runtime` → `.node-version` → `.nvmrc` → `engines.node`), so `actions/checkout` must run before `nubjs/setup-nub`.
 
-## How it differs from setup-node
-
-The `actions/setup-node` action installs a Node version *you* name in the workflow, and that version is what your steps run. The setup-nub action installs the Nub CLI; Nub then runs the project's declared pin at runtime. A Node version you pass as `node-version` is a warm-up hint — Nub still runs the project pin regardless.
-
-That makes the inputs you'd reach for different:
-
-```diff
-- - uses: actions/setup-node@v4
--   with:
--     node-version: 22
-+ - uses: nubjs/setup-nub@v0
-```
-
-Nub reads `.node-version`, `.nvmrc`, or `engines.node` on first run.
-
-The setup-node inputs (`node-version`, `cache`, `registry-url`, …) are all accepted, so a mechanical swap is safe. The ones Nub can't honor are accepted and ignored rather than erroring.
+All `actions/setup-node` inputs are accepted, so the swap is always mechanical — inputs Nub can't honor are accepted and ignored rather than erroring.
 
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `nub-version` | `latest` | Version of Nub to install — any semver range npm understands. |
-| `node-version` | | Pre-provision this Node version into the cache as a warm-up hint. |
-| `node-version-file` | | Read a Node version from a file and pre-provision it. |
+| `node-version` | | Provision this Node version during setup instead of the project pin. |
+| `node-version-file` | | Read a Node version from a file and provision it during setup. |
 | `cache` | `false` | Cache Nub's store and provisioned Node toolchains across runs. |
 | `cache-dependency-path` | | Lockfile path(s) whose hash keys the cache. |
-| `registry-url` | | Registry to set up for auth; writes a project-level `.npmrc`. |
+| `registry-url` | | Registry to set up for auth; writes a temporary user-level `.npmrc` via `NPM_CONFIG_USERCONFIG`. |
 | `scope` | | Scope for a scoped registry; falls back to the repository owner for GitHub Packages. |
 | `always-auth` | `false` | Authenticate on every registry request. |
 | `token` | `github.token` | Token for GitHub-API rate-limit relief when resolving Nub's version range. |
@@ -61,7 +46,7 @@ Pin the CLI version to install — any semver range npm understands. Defaults to
 
 ### `node-version`
 
-Pass a version to pre-provision it into Nub's cache during setup, so the first run is warm. This is a **warm-up hint, not a pin** — if it differs from the project's declared pin, the action emits a warning and Nub runs the project pin. The project pin always wins at runtime.
+Override the project pin for this run. The action provisions the specified version during setup instead of resolving the pin files:
 
 ```yaml
 - uses: nubjs/setup-nub@v0
@@ -69,19 +54,17 @@ Pass a version to pre-provision it into Nub's cache during setup, so the first r
     node-version: 22.15.0
 ```
 
-Both `node-version` and `node-version-file` are redundant with Nub's own resolution — Nub provisions the pin lazily on first use without either input. Reach for them only when you want the download to happen in the setup step.
+When this input differs from the project's declared pin, the action emits a warning. Omit it to let Nub resolve and provision the project pin automatically.
 
 ### `node-version-file`
 
-Read a Node version from a file and pre-provision it. Accepts `.node-version`, `.nvmrc`, and `package.json` (reads `engines.node`):
+Read a Node version from a file and provision it during setup. Accepts `.node-version`, `.nvmrc`, and `package.json` (reads `engines.node`):
 
 ```yaml
 - uses: nubjs/setup-nub@v0
   with:
     node-version-file: .node-version
 ```
-
-Same warm-up-hint semantics as `node-version` — the project pin wins at runtime regardless.
 
 ### `cache`
 
@@ -120,7 +103,7 @@ A `restore-keys` ladder gives a partial warm hit even when the lockfile changes.
 
 ### `registry-url`
 
-Set up authenticated registry access. The action writes a project-level `.npmrc` — the neutral file Nub's package manager reads — and wires the auth token to `NODE_AUTH_TOKEN`:
+Set up authenticated registry access. The action writes a temporary user-level `.npmrc` via `NPM_CONFIG_USERCONFIG` and wires the auth token to `NODE_AUTH_TOKEN`:
 
 ```yaml
 - uses: nubjs/setup-nub@v0
@@ -148,7 +131,7 @@ Scope for a scoped registry. Falls back to the repository owner for `npm.pkg.git
 
 ### `always-auth`
 
-Write `always-auth=true` into the project `.npmrc` to authenticate on every registry request.
+Write `always-auth=true` into the `.npmrc` to authenticate on every registry request.
 
 ### `token`
 
@@ -159,7 +142,7 @@ Token for GitHub-API rate-limit relief when resolving Nub's version range (and N
 | Output | Description |
 | --- | --- |
 | `nub-version` | The installed Nub version. |
-| `node-version` | The Node version Nub resolves for the project; empty when nothing was provisioned. |
+| `node-version` | The Node version provisioned during setup; empty when nothing was provisioned. |
 | `cache-hit` | Whether the store cache was restored; only meaningful with caching on. |
 
 ## Related
