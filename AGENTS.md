@@ -200,6 +200,10 @@ The brand boundary protects **public-facing surfaces only** — anything a user 
 - **Error codes are internal — don't brand-sweep them.** `ERR_NUB_*` / `ERR_AUBE_*` / `WARN_*` identifiers (and the engine errors that surface them) are internal mechanism; a brand string in a code or message is acceptable and not worth chasing. *Adding* a missing code is good UX; rebranding an existing one for purity is not required.
 - **No vendored Node patches.** Nub does not patch Node source, ship a custom-built Node binary, or embed `libnode`. Every augmentation rides on Node's public extension surfaces. (This is an architecture/additivity rule, not a brand rule.) If a feature can't be expressed through those, find a different feature.
 
+### Web/runtime API compliance bar — spec and Cloudflare semantics; Bun parity is not the goal
+
+**Web/runtime APIs are implemented to the SPEC, or to Cloudflare's semantics — never to match Bun's non-spec additions.** When nub provides a web-platform or runtime API (Worker, HTMLRewriter, fetch, streams, etc.), the bar is WHATWG/TC39/WinterTC spec compliance, or Cloudflare Workers semantics where there is no formal spec (the documented HTMLRewriter exception). Bun-specific behaviors that are NOT spec-compliant are NOT implemented for parity's sake — do not add an API or a behavior solely because Bun has it. If a user later asks for a specific Bun behavior, it's considered then, individually, on its merits. Spec/Cloudflare compliance is the goal; Bun parity is not. (Bun is still useful as a reference for what's POSSIBLE and as a differential test oracle — just not as a spec.)
+
 ### `nub`-named npm packages, explained
 
 Two families of `nub`-named packages exist on npm. Neither is the prohibited bare `@nub/*` scope, and neither is user-facing application code:
