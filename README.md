@@ -26,8 +26,6 @@
 <br/>
 <br/>
 
-
-
 A Bun-like DX on top of stock `node`, written in Rust.
 
 
@@ -80,29 +78,52 @@ For GitHub Actions, use [`nubjs/setup-nub`](https://github.com/nubjs/setup-nub) 
 
 ## File runner — `nub <file>`
 
-A flag-for-flag drop-in for `node <file>` that also runs TypeScript and JSX directly — no tsconfig, no build step. A `.ts` file starts on par with plain `node`:
+Run a file. Supports `.js`, `.ts`, `.mjs`. `.cjs`, `.mts`. `.cts`, `.jsx`. `.tsx`. Flag-for-flag and var-for-var drop-in compatible for `node` (mostly via passthrough). 
 
 ```sh
 nub index.ts             # TypeScript, JSX, no build step
 nub --watch app.ts       # same path, restart-on-change
 ```
 
-- 🦆 Full TypeScript support — non-erasable syntax (`enum`, `namespace`, parameter properties), `emitDecoratorMetadata` decorators
+It augments stock Node with some of Bun/Deno's best features:
+
+- 🦆 Full TypeScript support, including `enum`, `namespace`
+- 🧭 TypeScript-friendly resolution: extensionless imports, `tsconfig.json#paths`
 - ⚛️ JSX / TSX
-- 🧭 TypeScript-friendly resolution — extensionless imports, remaps `.js → .ts`, `tsconfig.json#paths`
-- 🆕 Modern syntax like `using` — transpiler-downleveled on earlier versions of Node
+- 🎂 Decorators and `emitDecoratorMetadata`
+- 🆕 Modern syntax like `using` (downleveled in transpiler when needed)
 - 🔐 Automatic `.env*` loading — Next.js/Vite parity
 - 🗂️ Built-in loaders for common data formats — `.yaml`, `.toml`, `.jsonc`, `.json5`, `.txt`
-- 🌐 Polyfills for missing APIs — `Temporal`, `Worker`, `URLPattern`, `WebSocket`, `EventSource` (these are mostly supported natively on recent versions of Node.js)
-- 🔥 Unflagged experimental features — `node:sqlite`, `vm.Module`, `localStorage`
+- 🌐 Polyfills for `Temporal`, `Worker`, `URLPattern`, `WebSocket`, `EventSource` (when needed)
+- 🔥 Unflags experimental features like `node:sqlite`, `vm.Module`, `localStorage`
 - ⚡ 2.9× faster startup than `tsx`
-
 
 > **How it works** — Nub takes advantage of Node extension surfaces that mostly didn't exist when Deno and Bun were built: 
 > 
 > - [`--import`](https://nodejs.org/api/cli.html#--importmodule)/[`--require`](https://nodejs.org/api/cli.html#-r---require-module) preloads
 > - [`module.registerHooks()`](https://nodejs.org/api/module.html#moduleregisterhooksoptions) for transpilation and resolution 
 > - [N-API native addons](https://nodejs.org/api/n-api.html): Nub embeds [oxc](https://oxc.rs/) for pre-transpilation
+
+
+### Node provisioning
+
+When you run a file with nub, it infers the version of Node your project expects and auto-installs it if neeed. It respects (in precedence order):
+
+- `NODE_EXECUTABLE` (override)
+- `package.json#devEngines`
+- `.node-version`
+- `.nvmrc`
+- `package.json#engines`
+
+This resolved version of Node is installed and your file is executed with it (with Nub's augmentations).
+
+```sh
+$ echo 26 > .node-version
+$ nub hello.ts
+Using Node.js 26.3.0 (resolved from .node-version)
+Installed in 9.8s
+Hello world!
+```
 
 ### Modern APIs
 
