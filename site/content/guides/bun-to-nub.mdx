@@ -279,7 +279,7 @@ Bun and Node have converged here, so these are mechanical renames in ESM:
 If your server runtime targets Bun (for example a framework preset like Nitro's `bun` preset), switch it to its Node target (`node-server` / `node`) and run the built entry with `node`. The Docker base image changes from a Bun image to a Node image plus a global Nub install:
 
 ```dockerfile
-FROM node:24-slim
+FROM node:26-slim
 RUN npm install -g @nubjs/nub
 # ... copy app, nub install, build ...
 CMD ["node", ".output/server/index.mjs"]
