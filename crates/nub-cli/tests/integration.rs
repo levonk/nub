@@ -2247,6 +2247,205 @@ fn worker_without_inbound_listener_exits_naturally() {
 }
 
 #[test]
+fn worker_name_option_reaches_both_sides() {
+    // WHATWG: the {name} ctor option surfaces as `worker.name` (main side) AND
+    // `self.name` (worker side, DedicatedWorkerGlobalScope.name). nub backs both
+    // with worker_threads `name`/`threadName`. Previously {name} was dropped.
+    let (stdout, stderr, code) = run_nub("worker", "name-main.ts");
+    assert_eq!(code, 0, "name fixture should run: {stderr}");
+    assert!(
+        stdout.contains("main-worker.name:pricer"),
+        "worker.name must reflect the {{name}} option on the main side: {stdout}"
+    );
+    assert!(
+        stdout.contains("self.name:pricer"),
+        "self.name must reflect the {{name}} option inside the worker: {stdout}"
+    );
+}
+
+#[test]
+fn worker_unnamed_self_name_is_empty() {
+    // WHATWG: an UNNAMED worker's self.name must be "". On Node >=24.6/22.20,
+    // native worker_threads.threadName returns the literal "WorkerThread" sentinel
+    // (the thread DISPLAY name) for an unnamed worker — nub must NOT surface that
+    // as self.name. The polyfill prefers the injected NUB_WORKER_NAME env (which
+    // carries the exact intent, "") and filters the "WorkerThread" sentinel.
+    let (stdout, stderr, code) = run_nub("worker", "unnamed-main.ts");
+    assert_eq!(code, 0, "unnamed fixture should run: {stderr}\n{stdout}");
+    assert!(
+        stdout.contains("unnamed-self.name:[]"),
+        "an unnamed worker's self.name must be the empty string, not a sentinel: {stdout}"
+    );
+}
+
+#[test]
+fn worker_from_data_url() {
+    // WHATWG inline-worker mechanism: a `data:` URL worker. Node runs it directly
+    // (worker_threads v14.9) and nub's worker-side scope (self/postMessage) is
+    // installed via the preload, so the inline worker can reply over `self`.
+    let (stdout, stderr, code) = run_nub("worker", "data-url-main.ts");
+    assert_eq!(code, 0, "data: URL worker should run: {stderr}\n{stdout}");
+    assert!(
+        stdout.contains("data-url:from-data-url"),
+        "data: URL worker must execute its inline source and reply: {stdout}"
+    );
+}
+
+#[test]
+fn worker_from_blob_url() {
+    // WHATWG standard inline mechanism: a `blob:` URL worker via
+    // URL.createObjectURL(new Blob([src])). nub wraps createObjectURL so the
+    // Blob's source is captured synchronously for the (sync) Worker constructor,
+    // then spawns it with eval. Previously the constructor threw on non-file input.
+    let (stdout, stderr, code) = run_nub("worker", "blob-url-main.ts");
+    assert_eq!(code, 0, "blob: URL worker should run: {stderr}\n{stdout}");
+    assert!(
+        stdout.contains("blob-url:from-blob-url"),
+        "blob: URL worker must execute its captured source and reply: {stdout}"
+    );
+}
+
+#[test]
+fn worker_blob_wrapping_preserves_file_instanceof_blob() {
+    // Regression: nub subclasses globalThis.Blob to support blob: workers. `File`
+    // is a bootstrap global extending the NATIVE Blob, so the swap must re-point
+    // File's prototype chain or `new File(...) instanceof Blob` silently turns
+    // false — an additivity violation vs vanilla Node (File IS-A Blob).
+    let (stdout, stderr, code) = run_nub("worker", "blob-file-instanceof.ts");
+    assert_eq!(code, 0, "blob/File fixture should run: {stderr}\n{stdout}");
+    // `File` is a Node global only from v20; on the 18.x floor it is absent (as in
+    // vanilla Node), so the fixture reports a skip there. When File exists it MUST
+    // remain a Blob after nub's Blob wrap.
+    assert!(
+        stdout.contains("file-instanceof-blob:true")
+            || stdout.contains("file-instanceof-blob:skip-no-File-global"),
+        "File must remain an instanceof Blob after the Blob wrap (matches plain Node): {stdout}"
+    );
+    assert!(
+        stdout.contains("blob-instanceof-blob:true") && stdout.contains("blob-size:5"),
+        "a Blob made through the wrapper must keep instanceof + the full Blob API: {stdout}"
+    );
+}
+
+#[test]
+fn worker_error_event_carries_source_location() {
+    // WHATWG ErrorEvent must carry filename/lineno/colno from where the error was
+    // raised. nub fills these from the worker error's stack (they were hardcoded
+    // ""/0/0 before). The fixture asserts a real filename + a nonzero lineno.
+    let (stdout, stderr, code) = run_nub("worker", "error-location-main.ts");
+    assert_eq!(
+        code, 0,
+        "error-location fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("err-loc:filename=true:lineno=true"),
+        "ErrorEvent must expose the worker error's filename + a nonzero lineno: {stdout}"
+    );
+}
+
+#[test]
+fn worker_has_no_exit_event() {
+    // The non-spec `exit` event is GONE: web Workers have no exit event (it is a
+    // node:worker_threads concept). An addEventListener('exit') must never fire,
+    // even after the worker exits via self.close().
+    let (stdout, stderr, code) = run_nub("worker", "spec-events-main.ts");
+    assert_eq!(
+        code, 0,
+        "spec-events fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("exit-event-fired:false"),
+        "no `exit` event may fire on the web Worker (it is not a spec event): {stdout}"
+    );
+}
+
+#[test]
+fn worker_transfers_and_detaches_arraybuffer() {
+    // postMessage(data, [buffer]) transfers ownership: the worker receives the
+    // bytes and the main-side ArrayBuffer is DETACHED (byteLength 0), per the
+    // structured-clone-with-transfer algorithm.
+    let (stdout, stderr, code) = run_nub("worker", "transfer-detach-main.ts");
+    assert_eq!(code, 0, "transfer fixture should run: {stderr}\n{stdout}");
+    assert!(
+        stdout.contains("worker-saw-bytes:8:8"),
+        "the transferred ArrayBuffer must arrive intact in the worker: {stdout}"
+    );
+    assert!(
+        stdout.contains("main-detached:true"),
+        "the main-side ArrayBuffer must be detached after transfer: {stdout}"
+    );
+}
+
+#[test]
+fn worker_messagechannel_port_roundtrip() {
+    // MessageChannel/MessagePort are web globals (Node-backed); verify a port
+    // transferred to a worker carries a message round-trip web-correctly under nub.
+    let (stdout, stderr, code) = run_nub("worker", "messagechannel-main.ts");
+    assert_eq!(
+        code, 0,
+        "MessageChannel fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("port-roundtrip:echo:ping-over-port"),
+        "a transferred MessagePort must round-trip a message: {stdout}"
+    );
+}
+
+#[test]
+fn broadcastchannel_delivers_to_other_not_self() {
+    // BroadcastChannel (Node global, stable v18.0): a message reaches OTHER
+    // channels of the same name but NOT the sender's own channel (WHATWG §9.5).
+    let (stdout, stderr, code) = run_nub("worker", "broadcastchannel-main.ts");
+    assert_eq!(
+        code, 0,
+        "BroadcastChannel fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("bc-received:broadcast-hello"),
+        "a BroadcastChannel message must reach another channel on the same name: {stdout}"
+    );
+    assert!(
+        stdout.contains("bc-sender-got-own:false"),
+        "the BroadcastChannel sender must NOT receive its own message: {stdout}"
+    );
+}
+
+#[test]
+fn classic_worker_importscripts_loads_synchronously() {
+    // WHATWG WorkerGlobalScope.importScripts (classic workers only): a
+    // {type:"classic"} worker synchronously loads + evaluates another script in
+    // its scope. nub provides importScripts for classic workers (and a throwing
+    // form for module workers).
+    let (stdout, stderr, code) = run_nub("worker", "classic-main.ts");
+    assert_eq!(
+        code, 0,
+        "classic importScripts fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("classic:dep-said:imported-via-importScripts"),
+        "importScripts must synchronously load + run the dependency in scope: {stdout}"
+    );
+}
+
+#[test]
+fn module_worker_importscripts_throws() {
+    // WHATWG: importScripts is classic-only and must throw in a module worker.
+    // nub's DEFAULT worker type is "module" (a documented divergence from the
+    // WHATWG "classic" default — aligns with nub's ESM-first posture), so a
+    // default-type worker calling importScripts throws. This test pins that
+    // behavior; the default-type choice is a maintainer-owned spec call.
+    let (stdout, stderr, code) = run_nub("worker", "module-importscripts-throws-main.ts");
+    assert_eq!(
+        code, 0,
+        "module-importscripts fixture should run: {stderr}\n{stdout}"
+    );
+    assert!(
+        stdout.contains("module-importscripts:threw"),
+        "importScripts must throw in a module (default-type) worker: {stdout}"
+    );
+}
+
+#[test]
 fn recursive_run_self_reference_terminates_via_guard() {
     // A `"build": "nub run -r build"` script must terminate via the recursion
     // guard (npm_package_name + npm_lifecycle_event identify the re-entered
