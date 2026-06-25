@@ -146,7 +146,7 @@ async function main() {
     deny(
       `Blocked: GitHub comment body is ${body.length} chars (limit ${MAX_BODY_CHARS}). ` +
         REMINDER +
-        " Re-issue a shorter body, or set NUB_ALLOW_LONG_COMMENT=1 if the longer text is genuinely warranted (e.g. a detailed release note).",
+        " Rewrite it to be as MINIMAL as possible — the fewest words that carry the facts. Do NOT just trim to under the limit; cut until nothing remains that isn't a fact. Set NUB_ALLOW_LONG_COMMENT=1 only if a genuinely longer body is warranted (e.g. a detailed release note).",
     );
     return;
   }
