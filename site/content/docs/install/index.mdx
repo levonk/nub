@@ -69,7 +69,7 @@ Config reads are symmetric with the lockfile: under each incumbent Nub reads tha
         { code: 'dependenciesMeta.injected', ok: true, partial: true, note: 'Not honored under Nub-identity migration.' },
         { code: 'nodeLinker', ok: true, partial: true, note: 'No PnP — node-linker=pnp errors.' },
         { code: 'engines / os / cpu', ok: true },
-        { code: 'pnpm_config_*', ok: true, note: 'Registry-client keys only.' },
+        { code: 'pnpm_config_*', ok: true, note: 'Generic settings under any pnpm version; registry-client keys (registry, proxy, strict-ssl) under pnpm v11+.' },
         { code: 'npm_config_*', ok: true },
       ],
     },
