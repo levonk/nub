@@ -156,7 +156,21 @@ if (typeof process.getBuiltinModule === "function") __ensureBuiltins();
 // natively now, and this file no longer needs to read version.mjs.
 
 // ── Constants ───────────────────────────────────────────────────────
+// TS/JSX exts ALWAYS transform (type-stripping is required), so they live in
+// TRANSPILE_EXTS — the set every dispatch site checks to route a file to
+// loadTranspile. Plain JS (.js/.mjs/.cjs) is DELIBERATELY NOT here: a plain-JS file
+// is transpiled ONLY when it carries transformable syntax (`using`/`await using`,
+// `v`-flag RegExp, decorators), and a no-op plain-JS file must take Node's OWN load
+// path BYTE-FOR-BYTE — putting it in TRANSPILE_EXTS would route every `.js`/`.cjs`
+// through nub's hook and change native CJS/ESM behavior (the `commonjs-sync` relabel,
+// require.cache, the require-of-ESM-syntax-.cjs error). So plain JS is handled by a
+// SEPARATE narrow path (`maybeTranspilePlainJs`) that fires only for transformable
+// files and is a no-op (returns null) otherwise — see PLAIN_JS_EXTS below.
 export const TRANSPILE_EXTS = new Set([".ts", ".tsx", ".mts", ".cts", ".jsx"]);
+// Project-source plain JS. Routed to the transpiler ONLY when transformable (the
+// `maybeTranspilePlainJs` gate); a no-op plain-JS file falls through to Node's
+// native loader untouched, byte-identical. node_modules is excluded at the gate.
+export const PLAIN_JS_EXTS = new Set([".js", ".mjs", ".cjs"]);
 export const DATA_EXTS = { ".jsonc": "jsonc", ".json5": "json5", ".toml": "toml", ".yaml": "yaml", ".yml": "yaml", ".txt": "txt" };
 export const TS_PARENT_EXTS = new Set([".ts", ".tsx", ".mts", ".cts"]);
 
@@ -435,13 +449,15 @@ function detectModuleInfo(filePath, source, lang) {
   // Addon missing (should never happen in a real install): default to ESM for
   // format (the common case) and "no decorators" for the guard — the same fallback
   // the old oxc-parser-unavailable branches used.
-  if (!nubNative) return { hasValueEsmSyntax: true, hasDecorators: false };
+  if (!nubNative) return { hasValueEsmSyntax: true, hasDecorators: false, transformableSyntax: false };
   try {
     return nubNative.detectModuleInfo(filePath, source, lang);
   } catch {
     // Unparseable → CJS for format + no decorators (the transpile/V8 surfaces the
-    // real error), matching the old per-call catch blocks.
-    return { hasValueEsmSyntax: false, hasDecorators: false };
+    // real error), matching the old per-call catch blocks. `transformableSyntax:
+    // false` is the SAFE plain-JS default — the verbatim path hands the raw bytes
+    // back, so V8 surfaces the real syntax error exactly where Node would.
+    return { hasValueEsmSyntax: false, hasDecorators: false, transformableSyntax: false };
   }
 }
 
@@ -450,9 +466,11 @@ function detectModuleInfo(filePath, source, lang) {
 // `type` is authoritative; otherwise (ambiguous) we detect from source syntax —
 // full Node parity (`--experimental-detect-module`), so a CJS-syntax `.ts` with
 // no `type` runs as CJS on nub exactly as on Node. See wiki/runtime/module-format.md.
+// `.mjs`→module / `.cjs`→commonjs are explicit (mirroring `.mts`/`.cts`), so the
+// plain-JS gate gets the right format without a needless detect.
 export function moduleFormatFor(ext, pkgType, filePath, source) {
-  if (ext === ".mts") return "module";
-  if (ext === ".cts") return "commonjs";
+  if (ext === ".mts" || ext === ".mjs") return "module";
+  if (ext === ".cts" || ext === ".cjs") return "commonjs";
   if (pkgType === "module") return "module";
   if (pkgType === "commonjs") return "commonjs";
   const lang = ext === ".tsx" ? "tsx" : ext === ".jsx" ? "jsx" : "ts";
@@ -571,6 +589,7 @@ export function loadTranspile(url, ext) {
   const format = moduleFormatFor(ext, pkgType, filePath, source);
 
   const lang = ext === ".tsx" ? "tsx" : ext === ".jsx" ? "jsx" : "ts";
+
   const opts = {
     lang,
     sourceType: format === "commonjs" ? "commonjs" : "module",
@@ -624,6 +643,40 @@ export function loadTranspile(url, ext) {
     throw new Error(`Transpile error in ${filePath}:\n${details}`);
   }
   return { format: result.format, source: result.code, shortCircuit: true };
+}
+
+// Project-source plain JS (`.js`/`.mjs`/`.cjs`) gate. Returns a transpiled load
+// result ONLY when the file carries syntax oxc lowers at nub's es2022 target
+// (`using`/`await using`, a `v`-flag RegExp, or decorators); otherwise returns
+// `null`, meaning "this file needs no transform — handle it with Node's OWN loader,
+// exactly as a non-listed extension." This is why `.js`/`.mjs`/`.cjs` are NOT in
+// TRANSPILE_EXTS: a no-op plain-JS file must take Node's native load path
+// byte-for-byte (preserving the `commonjs-sync` relabel, require.cache, the
+// require-of-ESM-syntax-`.cjs` error — all of which intercepting the file would
+// break), and oxc would reformat it (quotes/semicolons/whitespace + a sourcemap
+// footer) if we ran it through anyway. The verdict rides ONE parse (the same one
+// `detectModuleInfo` does for format detection). node_modules is gated at the call
+// sites (the byte-parity boundary). JSX-in-`.js` is out of scope (lang is "ts",
+// which does not parse JSX); use `.jsx`.
+export function maybeTranspilePlainJs(url, ext) {
+  __ensureBuiltins();
+  const filePath = fileURLToPath(url);
+  let source;
+  try {
+    source = readFileSync(filePath, "utf8");
+  } catch {
+    // Unreadable here → let Node's loader surface its own error.
+    return null;
+  }
+  // lang "ts" parses all JS (a TS superset) but NOT JSX — JSX-in-.js is out of scope.
+  const info = detectModuleInfo(filePath, source, "ts");
+  if (!info.transformableSyntax && !info.hasDecorators) {
+    return null; // no-op: Node's native loader handles it, byte-identical.
+  }
+  // Transformable: run the SAME pipeline as TS/JSX (target es2022 lowering, tsconfig,
+  // source maps, the Stage-3 decorator guard, format detection, cache). loadTranspile
+  // re-reads + re-parses, but only for the rare file that actually needs lowering.
+  return loadTranspile(url, ext);
 }
 
 // ── Data-format imports ─────────────────────────────────────────────
